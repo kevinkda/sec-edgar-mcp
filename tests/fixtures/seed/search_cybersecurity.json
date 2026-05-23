@@ -1,0 +1,33 @@
+{
+  "hits": {
+    "total": {"value": 2, "relation": "eq"},
+    "hits": [
+      {
+        "_id": "0000320193-24-000050",
+        "_score": 4.2,
+        "_source": {
+          "adsh": "0000320193-24-000050",
+          "ciks": ["0000320193"],
+          "display_names": ["Apple Inc. (AAPL) (CIK 0000320193)"],
+          "form": "8-K",
+          "file_date": "2024-05-15",
+          "description": "Item 5.02 cybersecurity incident disclosure"
+        },
+        "highlight": {"text": ["...cybersecurity incident reported..."]}
+      },
+      {
+        "_id": "0000789019-24-000077",
+        "_score": 3.7,
+        "_source": {
+          "adsh": "0000789019-24-000077",
+          "ciks": ["0000789019"],
+          "display_names": ["MICROSOFT CORP (MSFT) (CIK 0000789019)"],
+          "form": "8-K",
+          "file_date": "2024-06-01",
+          "description": "Item 1.05 cybersecurity disclosure"
+        },
+        "highlight": {"text": ["...cybersecurity incident remediation..."]}
+      }
+    ]
+  }
+}

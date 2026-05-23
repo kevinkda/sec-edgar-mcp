@@ -1,0 +1,41 @@
+{
+  "cik": "0000320193",
+  "name": "Apple Inc.",
+  "tickers": ["AAPL"],
+  "exchanges": ["Nasdaq"],
+  "sic": "3571",
+  "sicDescription": "ELECTRONIC COMPUTERS",
+  "ein": "942404110",
+  "filings": {
+    "recent": {
+      "accessionNumber": [
+        "0000320193-24-000123",
+        "0000320193-24-000100",
+        "0000320193-24-000050",
+        "0000320193-24-000010"
+      ],
+      "form": ["10-K", "10-Q", "8-K", "4"],
+      "filingDate": [
+        "2024-11-01",
+        "2024-08-02",
+        "2024-05-15",
+        "2024-04-30"
+      ],
+      "primaryDocument": [
+        "aapl-20240928.htm",
+        "aapl-20240629.htm",
+        "aapl-20240515.htm",
+        "wf-form4_171430123456.xml"
+      ],
+      "primaryDocDescription": [
+        "10-K",
+        "10-Q",
+        "8-K",
+        "FORM 4"
+      ],
+      "items": ["", "", "Item 5.02", ""],
+      "isXBRL": [1, 1, 0, 0],
+      "isInlineXBRL": [1, 1, 0, 0]
+    }
+  }
+}
