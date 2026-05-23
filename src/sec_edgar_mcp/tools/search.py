@@ -57,10 +57,7 @@ async def search_filings_full_text_impl(
 def _normalise(raw: dict[str, Any], *, query: str) -> dict[str, Any]:
     hits_block = raw.get("hits", {})
     total_block = hits_block.get("total", {}) if isinstance(hits_block, dict) else {}
-    if isinstance(total_block, dict):
-        total = total_block.get("value", 0)
-    else:
-        total = total_block
+    total = total_block.get("value", 0) if isinstance(total_block, dict) else total_block
     try:
         total_int = int(total)
     except (TypeError, ValueError):
@@ -80,7 +77,9 @@ def _normalise(raw: dict[str, Any], *, query: str) -> dict[str, Any]:
                     "company": _first(src.get("display_names")) or src.get("display_names"),
                     "form": src.get("form"),
                     "filing_date": src.get("file_date"),
-                    "snippet": _first(h.get("highlight", {}).get("text") if isinstance(h.get("highlight"), dict) else None)
+                    "snippet": _first(
+                        h.get("highlight", {}).get("text") if isinstance(h.get("highlight"), dict) else None
+                    )
                     or src.get("description"),
                     "score": h.get("_score"),
                 }

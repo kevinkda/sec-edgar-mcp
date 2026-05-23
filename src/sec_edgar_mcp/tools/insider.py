@@ -70,9 +70,7 @@ async def get_form4_insider_trades_impl(
     return await call_with_cache(fetch, cache_lookup=_lookup, cache_store=_store)
 
 
-def _filter_form4(
-    recent: dict[str, Any], *, cik: str, cutoff_iso: str
-) -> list[dict[str, Any]]:
+def _filter_form4(recent: Any, *, cik: str, cutoff_iso: str) -> list[dict[str, Any]]:
     if not isinstance(recent, dict):
         return []
     accession = recent.get("accessionNumber") or []

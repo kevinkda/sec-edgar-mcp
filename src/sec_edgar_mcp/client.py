@@ -113,8 +113,7 @@ def resolve_user_agent() -> str:
 def resolve_rate_limit() -> int:
     """Return the active rate limit (≤ ``SEC_HARD_RATE_LIMIT_PER_SEC``)."""
     target = _env_int(ENV_RATE_LIMIT, DEFAULT_RATE_LIMIT_PER_SEC)
-    if target < 1:
-        target = 1
+    target = max(target, 1)
     if target > SEC_HARD_RATE_LIMIT_PER_SEC:
         log.warning(
             '{"event":"rate_limit_clamped","requested":%d,"max":%d}',
@@ -267,8 +266,7 @@ class SecEdgarClient:
                     retry_after = _parse_retry_after(resp)
                     raise SecRateLimitError(
                         retry_after_seconds=retry_after,
-                        current_window_used=self.bucket.capacity
-                        - self.bucket.tokens_remaining(),
+                        current_window_used=self.bucket.capacity - self.bucket.tokens_remaining(),
                     )
                 await asyncio.sleep(_parse_retry_after(resp))
                 continue
@@ -355,8 +353,8 @@ def _parse_retry_after(resp: httpx.Response) -> int:
 
 def _backoff_delay(attempt: int) -> float:
     """Exponential back-off with jitter."""
-    base = DEFAULT_BACKOFF_BASE_SEC * (2 ** attempt)
-    return base + random.random() * 0.25  # noqa: S311 - non-crypto jitter
+    base = DEFAULT_BACKOFF_BASE_SEC * (2**attempt)
+    return float(base + random.random() * 0.25)
 
 
 def make_client(transport: httpx.AsyncBaseTransport | None = None) -> SecEdgarClient:
@@ -408,8 +406,8 @@ async def resolve_cik(client: SecEdgarClient, cik_or_ticker: str) -> str:
 
 __all__ = [
     "DATA_HOST",
-    "DEFAULT_MAX_RETRIES_429",
     "DEFAULT_MAX_RETRIES_5XX",
+    "DEFAULT_MAX_RETRIES_429",
     "DEFAULT_RATE_LIMIT_PER_SEC",
     "DEFAULT_REQUEST_TIMEOUT_SEC",
     "ENV_RATE_LIMIT",

@@ -54,10 +54,7 @@ def _harden_stdio() -> None:
                 encoding="utf-8",
             )
             file_handler.setFormatter(
-                logging.Formatter(
-                    '{"ts":"%(asctime)s","level":"%(levelname)s",'
-                    '"logger":"%(name)s","msg":%(message)r}'
-                )
+                logging.Formatter('{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":%(message)r}')
             )
             handlers.append(file_handler)
         except OSError:

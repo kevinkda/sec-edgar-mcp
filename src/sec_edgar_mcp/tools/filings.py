@@ -77,24 +77,15 @@ async def get_filing_text_impl(args: GetFilingTextInput) -> dict[str, Any]:
         # SEC publishes alongside every filing.
         accession_no_dashes = accession.replace("-", "")
         cik_int = int(accession.split("-")[0])
-        index_url = (
-            f"{WWW_HOST}/Archives/edgar/data/{cik_int}/{accession_no_dashes}/"
-            f"{accession}-index.json"
-        )
+        index_url = f"{WWW_HOST}/Archives/edgar/data/{cik_int}/{accession_no_dashes}/{accession}-index.json"
         index = await client.get_json(index_url)
         primary_doc = _select_document(index, args.document_type)
         if primary_doc is None:
             raise SecNotFoundError(
                 resource=f"accession:{accession}:{args.document_type}",
-                hint=(
-                    f"no primary document found in index.json for "
-                    f"accession {accession}"
-                ),
+                hint=(f"no primary document found in index.json for accession {accession}"),
             )
-        doc_url = (
-            f"{WWW_HOST}/Archives/edgar/data/{cik_int}/{accession_no_dashes}/"
-            f"{primary_doc}"
-        )
+        doc_url = f"{WWW_HOST}/Archives/edgar/data/{cik_int}/{accession_no_dashes}/{primary_doc}"
         text, ctype, byte_size, truncated = await client.get_text(doc_url)
         return {
             "accession_number": accession,
@@ -138,7 +129,7 @@ def _first(value: Any) -> Any:
     return None
 
 
-def _zip_recent(recent: dict[str, Any], *, cik: str) -> list[dict[str, Any]]:
+def _zip_recent(recent: Any, *, cik: str) -> list[dict[str, Any]]:
     """Convert SEC's columnar ``filings.recent`` shape to a row list."""
     if not isinstance(recent, dict):
         return []

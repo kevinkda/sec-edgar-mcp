@@ -80,9 +80,7 @@ async def get_server_info_impl(*, server_version: str) -> dict[str, Any]:
     return {
         "server_version": server_version,
         "mcp_sdk_version": getattr(mcp, "__version__", "unknown"),
-        "python_version": (
-            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        ),
+        "python_version": (f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"),
         "supported_tools": supported_tool_names(),
         "platform_supported_v1": ["macos>=11", "linux"],
     }

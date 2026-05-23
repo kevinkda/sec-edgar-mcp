@@ -82,7 +82,7 @@ async def call_with_cache(
     if cache is not None and not bypass and cache_store is not None:
         try:
             cache_store(cache, payload)
-        except Exception:
+        except Exception:  # noqa: S110 - cache errors must never break tools
             pass
     payload = dict(payload)
     payload["_cache_status"] = cache_status

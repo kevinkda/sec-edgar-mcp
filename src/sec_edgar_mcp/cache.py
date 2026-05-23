@@ -338,9 +338,7 @@ class Cache:
 
     # ----------------------------------------------- generic JSON tables
 
-    def _get_json_row(
-        self, table: str, key: str
-    ) -> dict[str, Any] | None:
+    def _get_json_row(self, table: str, key: str) -> dict[str, Any] | None:
         with self._lock:
             if self._conn is None:
                 return None
@@ -404,7 +402,11 @@ class Cache:
         return self._get_json_row("filings_index_cache", _hash_params(params))
 
     def put_filings_index(
-        self, params: dict[str, Any], raw: dict[str, Any], *, cik: str | None = None,
+        self,
+        params: dict[str, Any],
+        raw: dict[str, Any],
+        *,
+        cik: str | None = None,
     ) -> None:
         self._put_json_row(
             "filings_index_cache",
@@ -418,7 +420,11 @@ class Cache:
         return self._get_json_row("form4_cache", _hash_params(params))
 
     def put_form4(
-        self, params: dict[str, Any], raw: dict[str, Any], *, cik: str | None = None,
+        self,
+        params: dict[str, Any],
+        raw: dict[str, Any],
+        *,
+        cik: str | None = None,
     ) -> None:
         self._put_json_row(
             "form4_cache",

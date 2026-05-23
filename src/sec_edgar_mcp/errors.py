@@ -95,15 +95,11 @@ class SecRateLimitError(SecError):
         self.retry_after_seconds: int = retry_after_seconds
         self.current_window_used: int = current_window_used
         super().__init__(
-            f"SEC rate limit exceeded; retry after {retry_after_seconds}s "
-            f"(used {current_window_used} in window)"
+            f"SEC rate limit exceeded; retry after {retry_after_seconds}s (used {current_window_used} in window)"
         )
 
     def __str__(self) -> str:
-        return (
-            f"SecRateLimitError(retry_after={self.retry_after_seconds}s, "
-            f"window_used={self.current_window_used})"
-        )
+        return f"SecRateLimitError(retry_after={self.retry_after_seconds}s, window_used={self.current_window_used})"
 
 
 class SecTransientError(SecError):
