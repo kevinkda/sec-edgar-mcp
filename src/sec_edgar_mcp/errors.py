@@ -138,7 +138,31 @@ class SecConfigurationError(SecError):
         return f"SecConfigurationError: {self.hint}"
 
 
+class Form4ParseError(SecError):
+    """A Form 4 XBRL/XML body could not be parsed.
+
+    Raised by :mod:`sec_edgar_mcp._xbrl` when the document is not even
+    a well-formed ``<ownershipDocument>``.  Note: missing **fields** inside
+    a well-formed document are tolerated (we surface them as ``None`` /
+    empty values plus a ``raw_warnings`` entry) — only structural failures
+    raise this exception.
+    """
+
+    def __init__(self, *, accession_number: str, reason: str) -> None:
+        if not isinstance(accession_number, str):
+            raise TypeError("accession_number must be str")
+        if not isinstance(reason, str):
+            raise TypeError("reason must be str")
+        self.accession_number: str = accession_number
+        self.reason: str = redact_email(reason)
+        super().__init__(f"Form 4 parse failed for {accession_number}: {self.reason}")
+
+    def __str__(self) -> str:
+        return f"Form4ParseError(accession_number={self.accession_number}): {self.reason}"
+
+
 __all__ = [
+    "Form4ParseError",
     "SecConfigurationError",
     "SecError",
     "SecNotFoundError",

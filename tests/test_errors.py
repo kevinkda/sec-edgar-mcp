@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from sec_edgar_mcp.errors import (
+    Form4ParseError,
     SecConfigurationError,
     SecError,
     SecNotFoundError,
@@ -116,3 +117,31 @@ def test_secerror_is_exception_subclass() -> None:
     assert issubclass(SecRateLimitError, SecError)
     assert issubclass(SecTransientError, SecError)
     assert issubclass(SecConfigurationError, SecError)
+    assert issubclass(Form4ParseError, SecError)
+
+
+class TestForm4ParseError:
+    def test_round_trip(self) -> None:
+        err = Form4ParseError(
+            accession_number="0000320193-24-000010",
+            reason="malformed XML at line 7",
+        )
+        assert err.accession_number == "0000320193-24-000010"
+        assert "malformed XML" in str(err)
+        assert "0000320193-24-000010" in str(err)
+
+    def test_reason_redacts_email(self) -> None:
+        err = Form4ParseError(
+            accession_number="x",
+            reason="contact ops@example.com to debug",
+        )
+        assert "ops@example.com" not in str(err)
+        assert "REDACTED" in err.reason
+
+    def test_accession_number_must_be_str(self) -> None:
+        with pytest.raises(TypeError):
+            Form4ParseError(accession_number=123, reason="x")  # type: ignore[arg-type]
+
+    def test_reason_must_be_str(self) -> None:
+        with pytest.raises(TypeError):
+            Form4ParseError(accession_number="x", reason=123)  # type: ignore[arg-type]
