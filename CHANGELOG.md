@@ -7,47 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-24
+
 ### Added
 
-- **Form 4 XBRL parser** (`_xbrl.py`): structured parsing of insider
-  trade reports using `defusedxml.ElementTree` for XXE / billion-laughs
-  / external-entity protection. Returns `Form4Data` with all
-  transactions (date, code, shares, price, ownership form), insider
-  role flags (officer / director / 10 %-owner), net buy/sell values,
-  and `raw_warnings` for tolerated field-level issues. Hard 8 MiB
-  input ceiling, 5 000-transaction cap per filing, and a 30-digit
-  exponent ceiling guard against pathological inputs.
-- **`get_form4_insider_trades` upgraded**: now fetches each filing's
-  XML body and returns structured `transactions[]` (date, code,
-  shares, price, ownership form) plus `summary` (net_buy_value,
-  net_sell_value, transaction_count, parse_failures) instead of
-  metadata-only. Per-filing fetch / parse failures are surfaced as
-  `parse_error` on the row instead of crashing the whole call. Cache
-  schema is unchanged — a hit avoids both the submissions JSON and
-  every Form 4 body fetch.
-- **`get_8k_with_items` (7th tool)**: filter 8-K filings by item codes
-  (1.01 entry into material agreement, 2.02 results of operations,
-  5.02 director/officer changes, 7.01 Reg FD, 9.01 financial
-  statements, etc.). Reuses the cached submissions JSON; new Pydantic
-  `Get8KWithItemsInput` enforces an `X.YY` `ITEM_CODE_RE` regex.
-- **Hypothesis fuzz tests** for the parser: 12 hand-crafted seeds
-  (XXE, billion-laughs, oversize, exotic Unicode, wrong root, …) and
-  3 property-based generators (well-formed random fields, random
-  binary, random Unicode text). Surfaced one real Decimal-overflow
-  bug that is now mitigated.
-- 76 new tests (XBRL parser + fuzz + 8-K tool + helper unit tests).
-- `defusedxml` runtime dependency and `hypothesis` dev dependency.
+- (Sprint A) Cross-platform `_platform.py` shim with 25 tests covering
+  POSIX/Windows file locking, `secure_chmod`, `restrictive_umask`,
+  `state_root`, `notify_desktop`. 100% line + branch coverage.
+- (Sprint A) `windows-latest` runner in CI matrix
+  (3 OS × 2 Python = 6 cells).
+- (Sprint A) CodeQL workflow for Python static analysis
+  (push/PR + Mon 02:45 UTC).
+- (Sprint B) **Form 4 XBRL parser** (`_xbrl.py`): structured parsing of
+  insider trade reports using `defusedxml.ElementTree` for XXE /
+  billion-laughs / external-entity protection. Returns frozen
+  `Form4Data` with all transactions (date, code, shares, price,
+  ownership form), insider role flags (officer / director / 10 %-owner),
+  net buy/sell values, and `raw_warnings` for tolerated field-level
+  issues. Hard 8 MiB input ceiling, 5 000-transaction cap per filing,
+  and a 30-digit exponent ceiling guard against pathological inputs.
+  Fuzz-tested with hypothesis (250+ generated examples).
+- (Sprint B) **`get_form4_insider_trades` upgraded**: now fetches each
+  filing's XML body and returns structured `transactions[].form4`
+  (date, code, shares, price, ownership form, post_transaction_shares,
+  is_derivative) plus `summary` (net_buy_value, net_sell_value,
+  transaction_count, parse_failures) instead of metadata-only.
+  Per-filing fetch / parse failures are surfaced as `parse_error` on
+  the row instead of crashing the whole call. `_MAX_BODIES_PER_CALL=50`
+  protects SEC rate-limit budget. Cache schema is unchanged — a hit
+  avoids both the submissions JSON and every Form 4 body fetch.
+- (Sprint B) **`get_8k_with_items` (7th tool)**: filter 8-K filings by
+  item codes (1.01 entry into material agreement, 2.02 results of
+  operations, 5.02 director/officer changes, 7.01 Reg FD, 9.01
+  financial statements, etc.). Reuses the cached submissions JSON; new
+  Pydantic `Get8KWithItemsInput` enforces an `X.YY` `ITEM_CODE_RE`
+  regex.
+- (Sprint B) **Hypothesis fuzz tests** for the parser: 12 hand-crafted
+  seeds (XXE, billion-laughs, oversize, exotic Unicode, wrong root, …)
+  and 3 property-based generators (well-formed random fields, random
+  binary, random Unicode text). Surfaced one real Decimal-overflow bug
+  that is now mitigated.
+- (Sprint B) `defusedxml` runtime dependency and `hypothesis` dev
+  dependency.
+- 76 new tests (Sprint B XBRL parser + fuzz + 8-K tool + helper unit
+  tests) plus 25 platform tests (Sprint A).
 
 ### Changed
 
+- Tool count: 6 → 7 (5 business + 2 meta);
+  `serverInfo.supportedTools` now reports 7 tools.
 - `docs/THREAT_MODEL.md`: removes "Form 4 XML parsing" from the
   out-of-scope list and documents the new XML attack-surface
   mitigation strategy (defusedxml + size / depth / exponent caps +
   `Form4ParseError` instead of unhandled exceptions).
-- Test count: 169 → 245 on Linux; total coverage 86.06 % → 91.08 %;
-  `_xbrl.py` 97 % line+branch coverage.
-- `serverInfo.supportedTools` now reports 7 tools (4 business + 3
-  meta) — `get_8k_with_items` joins the surface.
+- Test count: 144 → 245 on Linux; total coverage 85.25% → 91.08%;
+  `_xbrl.py` 97% line+branch coverage; 4 critical modules at 100%.
+
+### Fixed
+
+- `decimal.Overflow` bug in `_xbrl.py` discovered by hypothesis fuzz
+  (commit `5b1d2ea`): cap Decimal exponents at 30 digits before
+  parsing.
 
 ### Security
 
@@ -57,6 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The new `Form4ParseError` exception inherits from `SecError` so
   parse failures flow through the existing email-redacting framing
   pipeline.
+
+### Compatibility
+
+- `_platform.py` shim provides Windows native support (Tier A
+  experimental; parent-dir 0o700 / file 0o600 enforced on POSIX with
+  no-op + warning on Windows).
+- Test count: 245 passed on Linux (91.08% coverage; `_xbrl.py` 97%,
+  4 critical modules at 100%).
 
 ## [0.1.1] - 2026-05-24
 
@@ -100,6 +128,7 @@ Initial scaffold.
 - Documentation: README (en + zh), `docs/REGISTER.md`,
   `docs/THREAT_MODEL.md`, `docs/RELEASE.md`, `CONTRIBUTING.md`.
 
-[Unreleased]: https://github.com/kevinkda/sec-edgar-mcp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/kevinkda/sec-edgar-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kevinkda/sec-edgar-mcp/releases/tag/v0.2.0
 [0.1.1]: https://github.com/kevinkda/sec-edgar-mcp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/kevinkda/sec-edgar-mcp/releases/tag/v0.1.0
