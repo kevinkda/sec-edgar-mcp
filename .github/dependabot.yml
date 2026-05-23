@@ -1,13 +1,15 @@
 # Dependabot configuration — sec-edgar-mcp
 #
 # Strategy:
-# - Weekly cadence on Monday.
-# - Group minor + patch into a single PR per ecosystem.
-# - Ignore major-version bumps for the `mcp` SDK because those need the
-#   1.x → 2.x compatibility checklist run manually.
+# - Weekly cadence on Monday (low review fatigue; one PR per week max).
+# - Group minor + patch into a single PR per ecosystem so the user does not
+#   review N unrelated tiny bumps separately.
+# - Ignore major-version bumps for the `mcp` SDK because any 1.x → 2.x bump
+#   needs the compatibility checklist run manually.
 
 version: 2
 updates:
+  # Python deps via uv.lock (pyproject.toml is the manifest).
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
@@ -33,10 +35,12 @@ updates:
           - "minor"
           - "patch"
     ignore:
+      # mcp 1.x -> 2.x major bump requires a manual compatibility checklist.
       - dependency-name: "mcp"
         update-types:
           - "version-update:semver-major"
 
+  # GitHub Actions workflow versions (actions/checkout, astral-sh/setup-uv, ...).
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
