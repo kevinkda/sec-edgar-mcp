@@ -44,7 +44,7 @@ def _seed_routes(fixture_dir: Path) -> list[FakeRoute]:
 
 
 @pytest.mark.asyncio
-async def test_app_exports_six_tools() -> None:
+async def test_app_exports_seven_tools() -> None:
     a = app()
     tools = await a.list_tools()
     names = {t.name for t in tools}
@@ -53,6 +53,7 @@ async def test_app_exports_six_tools() -> None:
         "get_form4_insider_trades",
         "get_filing_text",
         "search_filings_full_text",
+        "get_8k_with_items",
         "health_check",
         "get_server_info",
     }
@@ -88,7 +89,7 @@ async def test_call_get_server_info_through_app() -> None:
     result = await a.call_tool("get_server_info", {})
     payload = _extract_payload(result)
     assert payload["server_version"] == SERVER_VERSION
-    assert len(payload["supported_tools"]) == 6
+    assert len(payload["supported_tools"]) == 7
 
 
 def test_initialize_reports_release_tag_version() -> None:
@@ -155,6 +156,20 @@ async def test_call_get_form4_through_app(make_client) -> None:
     )
     payload = _extract_payload(result)
     assert payload["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_call_get_8k_with_items_through_app(make_client) -> None:
+    client = make_client(_seed_routes(FIXTURE_DIR))
+    await runtime_mod.set_client_for_tests(client)
+    a = app()
+    result = await a.call_tool(
+        "get_8k_with_items",
+        {"cik_or_ticker": "AAPL", "item_codes": ["5.02"], "since_days": 365},
+    )
+    payload = _extract_payload(result)
+    assert payload["count"] == 1
+    assert payload["filings"][0]["items"] == ["5.02"]
 
 
 @pytest.mark.asyncio

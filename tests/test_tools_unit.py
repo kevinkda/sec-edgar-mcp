@@ -10,12 +10,17 @@ import pytest
 import sec_edgar_mcp.tools._runtime as runtime_mod
 from sec_edgar_mcp.errors import SecNotFoundError
 from sec_edgar_mcp.models import (
+    Get8KWithItemsInput,
     GetCompanyFilingsInput,
     GetFilingTextInput,
     GetForm4InsiderTradesInput,
     SearchFilingsFullTextInput,
 )
-from sec_edgar_mcp.tools.filings import get_company_filings_impl, get_filing_text_impl
+from sec_edgar_mcp.tools.filings import (
+    get_8k_with_items_impl,
+    get_company_filings_impl,
+    get_filing_text_impl,
+)
 from sec_edgar_mcp.tools.insider import get_form4_insider_trades_impl
 from sec_edgar_mcp.tools.meta import (
     get_cache_stats_impl,
@@ -392,6 +397,203 @@ async def test_search_full_text_5xx(make_client) -> None:
 
 
 # ---------------------------------------------------------------------------
+# get_8k_with_items
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_8k_with_items_no_filter(make_client) -> None:
+    client = make_client(_seed_routes(FIXTURE_DIR))
+    await runtime_mod.set_client_for_tests(client)
+    out = await get_8k_with_items_impl(
+        Get8KWithItemsInput(cik_or_ticker="AAPL", since_days=365),
+    )
+    assert out["count"] == 1
+    assert out["item_codes_filter"] is None
+    row = out["filings"][0]
+    assert row["form"] == "8-K"
+    assert row["accession_number"] == "0000320193-24-000050"
+    assert row["items"] == ["5.02"]
+    assert row["primary_doc_url"] is not None
+    assert row["primary_doc_url"].endswith("aapl-20240515.htm")
+
+
+@pytest.mark.asyncio
+async def test_get_8k_with_items_filter_match(make_client) -> None:
+    client = make_client(_seed_routes(FIXTURE_DIR))
+    await runtime_mod.set_client_for_tests(client)
+    out = await get_8k_with_items_impl(
+        Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["5.02"], since_days=365),
+    )
+    assert out["count"] == 1
+    assert out["item_codes_filter"] == ["5.02"]
+    assert "5.02" in out["filings"][0]["items"]
+
+
+@pytest.mark.asyncio
+async def test_get_8k_with_items_filter_no_match(make_client) -> None:
+    client = make_client(_seed_routes(FIXTURE_DIR))
+    await runtime_mod.set_client_for_tests(client)
+    out = await get_8k_with_items_impl(
+        Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["1.01"], since_days=365),
+    )
+    assert out["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_8k_with_items_window_filter(make_client) -> None:
+    client = make_client(_seed_routes(FIXTURE_DIR))
+    await runtime_mod.set_client_for_tests(client)
+    out = await get_8k_with_items_impl(
+        Get8KWithItemsInput(cik_or_ticker="AAPL", since_days=1),
+    )
+    assert out["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_8k_with_items_invalid_item_code() -> None:
+    """Pydantic validation rejects malformed item codes."""
+    from pydantic import ValidationError
+
+    from sec_edgar_mcp.errors import SecError
+
+    with pytest.raises((ValidationError, SecError)):
+        Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["not-a-code"])
+
+
+@pytest.mark.asyncio
+async def test_get_8k_with_items_404(make_client) -> None:
+    client = make_client(
+        [
+            FakeRoute(
+                "/files/company_tickers.json",
+                json_body={"0": {"cik_str": 1, "ticker": "ZZZZ", "title": "Z"}},
+            ),
+            FakeRoute("/submissions/CIK", status_code=404, json_body={}),
+        ]
+    )
+    await runtime_mod.set_client_for_tests(client)
+    with pytest.raises(SecNotFoundError):
+        await get_8k_with_items_impl(
+            Get8KWithItemsInput(cik_or_ticker="ZZZZ"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_8k_with_items_multi_item_string(make_client) -> None:
+    """Submissions index ``items`` is comma-joined; we must split correctly."""
+    submissions = json.loads(
+        (FIXTURE_DIR / "submissions_aapl.json").read_text(encoding="utf-8"),
+    )
+    from datetime import UTC, datetime, timedelta
+
+    today = datetime.now(tz=UTC).date()
+    submissions["filings"]["recent"]["filingDate"] = [
+        (today - timedelta(days=10)).isoformat(),
+        (today - timedelta(days=20)).isoformat(),
+        (today - timedelta(days=30)).isoformat(),
+        (today - timedelta(days=45)).isoformat(),
+    ]
+    submissions["filings"]["recent"]["items"][2] = "Item 1.01,Item 9.01"
+    routes = [
+        FakeRoute(
+            "/files/company_tickers.json",
+            json_body=json.loads((FIXTURE_DIR / "company_tickers.json").read_text(encoding="utf-8")),
+        ),
+        FakeRoute("/submissions/CIK", json_body=submissions),
+    ]
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    out = await get_8k_with_items_impl(
+        Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["9.01"], since_days=365),
+    )
+    assert out["count"] == 1
+    assert "1.01" in out["filings"][0]["items"]
+    assert "9.01" in out["filings"][0]["items"]
+
+
+def test_filings_helpers_parse_items_edge_cases() -> None:
+    """Direct unit tests for the small helpers in ``tools.filings``."""
+    from sec_edgar_mcp.tools.filings import _parse_items
+
+    assert _parse_items("") == []
+    assert _parse_items(None) == []
+    assert _parse_items(123) == []
+    assert _parse_items("Item 1.01") == ["1.01"]
+    assert _parse_items("Item 1.01, Item 5.02") == ["1.01", "5.02"]
+    assert _parse_items("1.01,5.02") == ["1.01", "5.02"]
+    # Stray "Item " prefix with weird casing.
+    assert _parse_items("ITEM 5.02") == ["5.02"]
+    # Empty token between commas is dropped.
+    assert _parse_items("Item 1.01,,Item 5.02") == ["1.01", "5.02"]
+
+
+def test_filings_helpers_build_primary_url() -> None:
+    from sec_edgar_mcp.tools.filings import _build_primary_url
+
+    url = _build_primary_url(320193, "0000320193-24-000050", "doc.htm")
+    assert url is not None
+    assert url.endswith("/Archives/edgar/data/320193/000032019324000050/doc.htm")
+    assert _build_primary_url(None, "x", "doc.htm") is None
+    assert _build_primary_url(320193, "x", None) is None  # type: ignore[arg-type]
+    assert _build_primary_url(320193, "x", "") is None
+
+
+def test_filings_helpers_filter_8k_non_dict_recent() -> None:
+    from sec_edgar_mcp.tools.filings import _filter_8k
+
+    assert _filter_8k(None, cik="0000320193", cutoff_iso="2020-01-01") == []
+    assert _filter_8k([], cik="0000320193", cutoff_iso="2020-01-01") == []
+
+
+def test_filings_helpers_filter_8k_skips_non_str_accession() -> None:
+    from sec_edgar_mcp.tools.filings import _filter_8k
+
+    recent = {
+        "accessionNumber": [None, "0000320193-24-000050"],
+        "form": ["8-K", "8-K"],
+        "filingDate": ["2025-01-01", "2025-01-02"],
+        "primaryDocument": ["a.htm", "b.htm"],
+        "items": ["", "Item 1.01"],
+    }
+    rows = _filter_8k(recent, cik="0000320193", cutoff_iso="2020-01-01")
+    assert len(rows) == 1
+    assert rows[0]["accession_number"] == "0000320193-24-000050"
+
+
+def test_insider_helpers_to_decimal_handles_garbage() -> None:
+    from decimal import Decimal
+
+    from sec_edgar_mcp.tools.insider import _to_decimal
+
+    assert _to_decimal(None) == Decimal("0")
+    assert _to_decimal("not-a-number") == Decimal("0")
+    assert _to_decimal(object()) == Decimal("0")
+    assert _to_decimal("3.14") == Decimal("3.14")
+
+
+def test_insider_helpers_filter_form4_skips_non_str_accession() -> None:
+    from sec_edgar_mcp.tools.insider import _filter_form4
+
+    recent = {
+        "accessionNumber": [None, "0000320193-24-000010"],
+        "form": ["4", "4"],
+        "filingDate": ["2099-01-01", "2099-01-02"],
+        "primaryDocument": ["a.xml", "b.xml"],
+    }
+    rows = _filter_form4(recent, cik="0000320193", cutoff_iso="2000-01-01")
+    assert len(rows) == 1
+    assert rows[0]["accession_number"] == "0000320193-24-000010"
+
+
+def test_insider_helpers_filter_form4_non_dict_recent() -> None:
+    from sec_edgar_mcp.tools.insider import _filter_form4
+
+    assert _filter_form4(None, cik="0000320193", cutoff_iso="2020-01-01") == []
+    assert _filter_form4("oops", cik="0000320193", cutoff_iso="2020-01-01") == []
+
+
+# ---------------------------------------------------------------------------
 # meta tools
 # ---------------------------------------------------------------------------
 
@@ -418,7 +620,7 @@ async def test_get_server_info() -> None:
     out = await get_server_info_impl(server_version="9.9.9")
     assert out["server_version"] == "9.9.9"
     assert "supported_tools" in out
-    assert len(out["supported_tools"]) == 6
+    assert len(out["supported_tools"]) == 7
 
 
 @pytest.mark.asyncio

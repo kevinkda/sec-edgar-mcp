@@ -111,6 +111,7 @@ from .errors import (  # noqa: E402
     SecValidationError,
 )
 from .models import (  # noqa: E402
+    Get8KWithItemsInput,
     GetCompanyFilingsInput,
     GetFilingTextInput,
     GetForm4InsiderTradesInput,
@@ -241,6 +242,25 @@ def _build_mcp() -> FastMCP:
                 since_days=since_days,
             )
             return await search.search_filings_full_text_impl(args)
+        except SecError as exc:
+            return _frame_error(exc)
+
+    @mcp_app.tool()
+    async def get_8k_with_items(
+        cik_or_ticker: str,
+        item_codes: list[str] | None = None,
+        since_days: int = 30,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return 8-K filings filtered by SEC item codes (e.g. '1.01', '5.02')."""
+        try:
+            args = Get8KWithItemsInput(
+                cik_or_ticker=cik_or_ticker,
+                item_codes=item_codes,
+                since_days=since_days,
+                limit=limit,
+            )
+            return await filings.get_8k_with_items_impl(args)
         except SecError as exc:
             return _frame_error(exc)
 

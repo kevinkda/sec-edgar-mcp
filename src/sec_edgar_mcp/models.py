@@ -227,6 +227,61 @@ class GetForm4InsiderTradesInput(_BaseInput):
         return v
 
 
+#: SEC 8-K item code regex (e.g. ``"1.01"``, ``"5.02"``, ``"9.01"``).
+ITEM_CODE_RE: Final[re.Pattern[str]] = re.compile(r"^\d{1,2}\.\d{1,2}$")
+
+
+ItemCode = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=3,
+        max_length=6,
+        pattern=ITEM_CODE_RE.pattern,
+    ),
+]
+
+
+class Get8KWithItemsInput(_BaseInput):
+    """Input for ``get_8k_with_items``.
+
+    Filters the issuer's 8-K filings (and 8-K/A amendments) by the SEC
+    item codes the filing reports.  Common codes:
+
+    * 1.01 - Entry into a Material Definitive Agreement
+    * 2.02 - Results of Operations and Financial Condition
+    * 5.02 - Departure / Election of Directors / Officers
+    * 7.01 - Regulation FD Disclosure
+    * 9.01 - Financial Statements and Exhibits
+    """
+
+    cik_or_ticker: CikOrTicker
+    item_codes: list[ItemCode] | None = Field(default=None, max_length=20)
+    since_days: int = Field(default=30, ge=1, le=3650)
+    limit: int = Field(default=50, ge=1, le=200)
+
+    @field_validator("cik_or_ticker", mode="before")
+    @classmethod
+    def _upper_cik_or_ticker(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip().upper()
+            if not CIK_OR_TICKER_RE.match(v):
+                from .errors import SecValidationError
+
+                raise SecValidationError(
+                    field="cik_or_ticker",
+                    reason=f"must match {CIK_OR_TICKER_RE.pattern}",
+                )
+        return v
+
+    @field_validator("item_codes", mode="before")
+    @classmethod
+    def _strip_item_codes(cls, v: object) -> object:
+        if isinstance(v, list):
+            return [item.strip() if isinstance(item, str) else item for item in v]
+        return v
+
+
 class GetFilingTextInput(_BaseInput):
     """Input for ``get_filing_text``."""
 
@@ -282,6 +337,7 @@ _SUPPORTED_TOOLS: Final[tuple[str, ...]] = (
     "get_form4_insider_trades",
     "get_filing_text",
     "search_filings_full_text",
+    "get_8k_with_items",
     "health_check",
     "get_server_info",
 )
@@ -297,16 +353,19 @@ __all__ = [
     "ALLOWED_FORM_TYPES",
     "CIK_OR_TICKER_RE",
     "CIK_RE",
+    "ITEM_CODE_RE",
     "TICKER_RE",
     "AccessionNumber",
     "CikOrTicker",
     "DocumentType",
     "FormType",
+    "Get8KWithItemsInput",
     "GetCompanyFilingsInput",
     "GetFilingTextInput",
     "GetForm4InsiderTradesInput",
     "GetServerInfoInput",
     "HealthCheckInput",
+    "ItemCode",
     "SearchFilingsFullTextInput",
     "SearchQuery",
     "supported_tool_names",

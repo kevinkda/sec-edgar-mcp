@@ -288,3 +288,55 @@ def test_db_open_error_does_not_propagate(tmp_path: Path) -> None:
 def test_duckdb_imports() -> None:
     # sanity: duckdb is importable; otherwise the rest of these tests are noise.
     assert hasattr(duckdb, "connect")
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — exercise tolerant parsing of fetched_at / raw_json
+# ---------------------------------------------------------------------------
+
+
+def test_parse_dt_accepts_iso_string() -> None:
+    from sec_edgar_mcp.cache import _parse_dt
+
+    out = _parse_dt("2024-05-01T12:34:56+00:00")
+    assert out is not None
+    assert out.year == 2024
+
+
+def test_parse_dt_handles_z_suffix_and_garbage() -> None:
+    from sec_edgar_mcp.cache import _parse_dt
+
+    assert _parse_dt("2024-05-01T12:34:56Z") is not None
+    assert _parse_dt("not-a-date") is None
+    assert _parse_dt(None) is None
+    assert _parse_dt(12345) is None
+
+
+def test_parse_dt_strips_tzinfo_for_aware_datetime() -> None:
+    from sec_edgar_mcp.cache import _parse_dt
+
+    dt = datetime(2024, 5, 1, 12, 34, tzinfo=UTC)
+    out = _parse_dt(dt)
+    assert out is not None
+    assert out.tzinfo is None
+
+
+def test_is_expired_handles_none_and_garbage() -> None:
+    from sec_edgar_mcp.cache import _is_expired
+
+    assert _is_expired(None, 60) is True
+    assert _is_expired(datetime.now(tz=UTC).replace(tzinfo=None), None) is True
+    assert _is_expired("garbage-iso", 60) is True
+
+
+def test_deserialise_handles_garbage() -> None:
+    from sec_edgar_mcp.cache import _deserialise
+
+    assert _deserialise(None) is None
+    assert _deserialise({"k": 1}) == {"k": 1}
+    assert _deserialise('{"k": 1}') == {"k": 1}
+    assert _deserialise("not-json") is None
+    assert _deserialise(b'{"k": 1}') == {"k": 1}
+    assert _deserialise(12345) is None
+    # Valid JSON but not a dict.
+    assert _deserialise("[1,2,3]") is None

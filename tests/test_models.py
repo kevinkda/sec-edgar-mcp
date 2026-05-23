@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sec_edgar_mcp.errors import SecValidationError
 from sec_edgar_mcp.models import (
     ALLOWED_FORM_TYPES,
+    Get8KWithItemsInput,
     GetCompanyFilingsInput,
     GetFilingTextInput,
     GetForm4InsiderTradesInput,
@@ -157,9 +158,56 @@ def test_supported_tool_names_stable() -> None:
     assert "get_form4_insider_trades" in names
     assert "get_filing_text" in names
     assert "search_filings_full_text" in names
+    assert "get_8k_with_items" in names
     assert "health_check" in names
     assert "get_server_info" in names
     assert len(set(names)) == len(names)
+
+
+class TestGet8KWithItemsInput:
+    def test_minimal(self) -> None:
+        v = Get8KWithItemsInput(cik_or_ticker="AAPL")
+        assert v.cik_or_ticker == "AAPL"
+        assert v.item_codes is None
+        assert v.since_days == 30
+        assert v.limit == 50
+
+    def test_ticker_uppercased(self) -> None:
+        v = Get8KWithItemsInput(cik_or_ticker="aapl", item_codes=["1.01", "5.02"])
+        assert v.cik_or_ticker == "AAPL"
+        assert v.item_codes == ["1.01", "5.02"]
+
+    def test_garbage_ticker_rejected(self) -> None:
+        with pytest.raises((ValidationError, SecValidationError)):
+            Get8KWithItemsInput(cik_or_ticker="!!!")
+
+    def test_item_code_format_strict(self) -> None:
+        with pytest.raises(ValidationError):
+            Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["abc"])
+        with pytest.raises(ValidationError):
+            Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["10101"])
+        with pytest.raises(ValidationError):
+            Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["1.01.01"])
+
+    def test_item_codes_strip(self) -> None:
+        v = Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["  1.01 "])
+        assert v.item_codes == ["1.01"]
+
+    def test_item_codes_max_length(self) -> None:
+        with pytest.raises(ValidationError):
+            Get8KWithItemsInput(cik_or_ticker="AAPL", item_codes=["1.01"] * 21)
+
+    def test_since_days_bounds(self) -> None:
+        with pytest.raises(ValidationError):
+            Get8KWithItemsInput(cik_or_ticker="AAPL", since_days=0)
+        with pytest.raises(ValidationError):
+            Get8KWithItemsInput(cik_or_ticker="AAPL", since_days=3651)
+
+    def test_limit_bounds(self) -> None:
+        with pytest.raises(ValidationError):
+            Get8KWithItemsInput(cik_or_ticker="AAPL", limit=0)
+        with pytest.raises(ValidationError):
+            Get8KWithItemsInput(cik_or_ticker="AAPL", limit=201)
 
 
 def test_allowed_form_types_includes_essentials() -> None:

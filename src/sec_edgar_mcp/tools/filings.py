@@ -19,7 +19,7 @@ from typing import Any
 from ..cache import Cache
 from ..client import DATA_HOST, WWW_HOST, SecEdgarClient, resolve_cik
 from ..errors import SecNotFoundError
-from ..models import GetCompanyFilingsInput, GetFilingTextInput
+from ..models import Get8KWithItemsInput, GetCompanyFilingsInput, GetFilingTextInput
 from ._runtime import call_with_cache
 
 
@@ -119,6 +119,162 @@ async def get_filing_text_impl(args: GetFilingTextInput) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# get_8k_with_items
+# ---------------------------------------------------------------------------
+
+
+_EIGHT_K_KINDS: frozenset[str] = frozenset({"8-K", "8-K/A"})
+
+
+async def get_8k_with_items_impl(args: Get8KWithItemsInput) -> dict[str, Any]:
+    """Return 8-K filings filtered by SEC item codes.
+
+    8-K is the SEC current-report form used to disclose unscheduled
+    material events.  Each filing reports one or more *items* identified
+    by an ``X.YY`` code (e.g. ``"1.01"`` Entry into a Material Definitive
+    Agreement, ``"5.02"`` Officer/Director Changes).  The submissions
+    index publishes a comma-separated ``items`` list per filing which we
+    parse + filter.
+
+    Output shape::
+
+        {
+            "company": { cik, name, ticker },
+            "since_days": int,
+            "item_codes_filter": list[str] | None,
+            "filings": [
+                { accession_number, filed_date, primary_doc_url,
+                  items: list[str], primary_document, period_of_report? },
+                ...
+            ],
+            "count": int,
+        }
+    """
+
+    async def fetch(client: SecEdgarClient) -> dict[str, Any]:
+        cik = await resolve_cik(client, args.cik_or_ticker)
+        url = f"{DATA_HOST}/submissions/CIK{cik}.json"
+        data = await client.get_json(url)
+        company_meta = {
+            "cik": cik,
+            "name": data.get("name"),
+            "ticker": _first(data.get("tickers")),
+        }
+        recent = data.get("filings", {}).get("recent", {})
+        cutoff_iso = _cutoff_iso(args.since_days)
+        rows = _filter_8k(recent, cik=cik, cutoff_iso=cutoff_iso)
+
+        wanted_codes = frozenset(c.strip() for c in args.item_codes) if args.item_codes else None
+        if wanted_codes is not None:
+            rows = [r for r in rows if wanted_codes.intersection(r["items"])]
+        rows = rows[: args.limit]
+        return {
+            "company": company_meta,
+            "since_days": args.since_days,
+            "item_codes_filter": sorted(wanted_codes) if wanted_codes is not None else None,
+            "filings": rows,
+            "count": len(rows),
+        }
+
+    def _lookup(cache: Cache) -> dict[str, Any] | None:
+        return cache.get_filings_index(_cache_params_8k(args))
+
+    def _store(cache: Cache, raw: dict[str, Any]) -> None:
+        cik = raw.get("company", {}).get("cik")
+        cache.put_filings_index(
+            _cache_params_8k(args),
+            raw,
+            cik=cik if isinstance(cik, str) else None,
+        )
+
+    return await call_with_cache(fetch, cache_lookup=_lookup, cache_store=_store)
+
+
+def _cutoff_iso(since_days: int) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(tz=UTC).date() - timedelta(days=since_days)).isoformat()
+
+
+def _filter_8k(recent: Any, *, cik: str, cutoff_iso: str) -> list[dict[str, Any]]:
+    if not isinstance(recent, dict):
+        return []
+    accession = recent.get("accessionNumber") or []
+    forms = recent.get("form") or []
+    dates = recent.get("filingDate") or []
+    primary_doc = recent.get("primaryDocument") or []
+    items = recent.get("items") or []
+    period = recent.get("reportDate") or []
+    out: list[dict[str, Any]] = []
+    cik_int = int(cik) if cik.isdigit() else None
+    for i, acc in enumerate(accession):
+        if not isinstance(acc, str):
+            continue
+        form = _safe_get(forms, i)
+        if form not in _EIGHT_K_KINDS:
+            continue
+        d = _safe_get(dates, i)
+        if isinstance(d, str) and d < cutoff_iso:
+            continue
+        primary = _safe_get(primary_doc, i)
+        primary_url = _build_primary_url(cik_int, acc, primary)
+        out.append(
+            {
+                "accession_number": acc,
+                "cik": cik,
+                "form": form,
+                "filed_date": d,
+                "period_of_report": _safe_get(period, i) or None,
+                "primary_document": primary,
+                "primary_doc_url": primary_url,
+                "items": _parse_items(_safe_get(items, i)),
+            }
+        )
+    return out
+
+
+def _build_primary_url(
+    cik_int: int | None,
+    accession: str,
+    primary: Any,
+) -> str | None:
+    if cik_int is None or not isinstance(primary, str) or not primary:
+        return None
+    return f"{WWW_HOST}/Archives/edgar/data/{cik_int}/{accession.replace('-', '')}/{primary}"
+
+
+def _parse_items(raw: Any) -> list[str]:
+    """Split ``"Item 1.01,Item 2.02"`` (SEC's format) into ``["1.01", "2.02"]``.
+
+    SEC publishes the items list as a single comma-separated string
+    inside ``filings.recent.items[i]``.  Each token is typically prefixed
+    with ``"Item "`` and may carry stray whitespace.
+    """
+    if not isinstance(raw, str) or raw == "":
+        return []
+    tokens = [t.strip() for t in raw.split(",") if t.strip()]
+    out: list[str] = []
+    for token in tokens:
+        # Strip an optional "Item " prefix; preserve the X.YY code as-is.
+        normalised = token
+        if normalised.lower().startswith("item "):
+            normalised = normalised[5:].strip()
+        if normalised:
+            out.append(normalised)
+    return out
+
+
+def _cache_params_8k(args: Get8KWithItemsInput) -> dict[str, Any]:
+    return {
+        "tool": "get_8k_with_items",
+        "cik_or_ticker": args.cik_or_ticker,
+        "item_codes": sorted(args.item_codes) if args.item_codes else None,
+        "since_days": args.since_days,
+        "limit": args.limit,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -207,4 +363,4 @@ def _cache_params(args: GetCompanyFilingsInput) -> dict[str, Any]:
     }
 
 
-__all__ = ["get_company_filings_impl", "get_filing_text_impl"]
+__all__ = ["get_8k_with_items_impl", "get_company_filings_impl", "get_filing_text_impl"]
