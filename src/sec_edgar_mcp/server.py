@@ -35,12 +35,15 @@ def _harden_stdio() -> None:
     builtins.print = _safe_print
 
     # 2) Logging - RotatingFileHandler + StreamHandler(stderr).
-    from . import cache as _cache_mod
+    from . import _platform
 
-    log_dir: Path | None = _cache_mod.state_root() / "sec-edgar-mcp" / "logs"
+    log_dir: Path | None = _platform.state_root() / "sec-edgar-mcp" / "logs"
     try:
         assert log_dir is not None
-        log_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+        with _platform.restrictive_umask():
+            log_dir.mkdir(parents=True, exist_ok=True)
+        if not _platform.IS_WINDOWS:
+            _platform.secure_chmod(log_dir, 0o700)
     except OSError:
         log_dir = None
 

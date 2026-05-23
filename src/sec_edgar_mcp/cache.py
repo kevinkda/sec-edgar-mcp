@@ -22,7 +22,6 @@ import hashlib
 import json
 import logging
 import os
-import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -31,6 +30,8 @@ from pathlib import Path
 from typing import Any, Final
 
 import duckdb
+
+from . import _platform
 
 log = logging.getLogger(__name__)
 
@@ -48,8 +49,6 @@ CACHE_DIR_NAME: Final[str] = "sec-edgar-mcp"
 
 ENV_CACHE_ENABLED: Final[str] = "SEC_EDGAR_CACHE_ENABLED"
 ENV_CACHE_BYPASS: Final[str] = "SEC_EDGAR_CACHE_BYPASS"
-
-IS_WINDOWS: Final[bool] = sys.platform == "win32"
 
 
 def _truthy(raw: str | None, *, default: bool) -> bool:
@@ -69,30 +68,13 @@ def cache_bypass() -> bool:
 
 
 def state_root() -> Path:
-    """Cross-platform state-directory root."""
-    raw = os.environ.get("XDG_STATE_HOME")
-    if raw:
-        return Path(raw).expanduser()
-    if IS_WINDOWS:  # pragma: no cover - windows-only branch
-        local_app = os.environ.get("LOCALAPPDATA")
-        if local_app:
-            return Path(local_app)
-        return Path.home() / "AppData" / "Local"
-    return Path.home() / ".local" / "state"
+    """Cross-platform state-directory root (delegates to ``_platform``)."""
+    return _platform.state_root()
 
 
 def default_db_path() -> Path:
     """Canonical cache DB path under ``$XDG_STATE_HOME``."""
     return state_root() / CACHE_DIR_NAME / CACHE_DB_FILENAME
-
-
-def _secure_chmod(path: Path, mode: int) -> None:
-    if IS_WINDOWS:  # pragma: no cover - windows-only branch
-        return
-    try:
-        os.chmod(path, mode)
-    except OSError:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -265,14 +247,12 @@ class Cache:
 
     def _ensure_parent(self) -> None:
         parent = self.db_path.parent
-        if IS_WINDOWS:  # pragma: no cover - windows-only branch
+        with _platform.restrictive_umask():
             parent.mkdir(parents=True, exist_ok=True)
-            return
-        old = os.umask(0o077)
-        try:
-            parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-        finally:
-            os.umask(old)
+        # Best-effort tighten on POSIX (no-op on Windows; restrictive_umask
+        # already prevented broad bits from being set on creation).
+        if parent.exists() and not _platform.IS_WINDOWS:
+            _platform.secure_chmod(parent, 0o700)
 
     def _open(self) -> None:
         try:
@@ -280,7 +260,7 @@ class Cache:
             self._conn = duckdb.connect(str(self.db_path))
             for stmt in _SCHEMA_DDL:
                 self._conn.execute(stmt)
-            _secure_chmod(self.db_path, 0o600)
+            _platform.secure_chmod(self.db_path, 0o600)
         except (duckdb.Error, OSError) as exc:
             log.warning('{"event":"cache_open_failed","path":"%s","error":"%s"}', self.db_path, exc)
             self._quarantine_and_reopen(exc)
@@ -306,7 +286,7 @@ class Cache:
             self._conn = duckdb.connect(str(self.db_path))
             for stmt in _SCHEMA_DDL:
                 self._conn.execute(stmt)
-            _secure_chmod(self.db_path, 0o600)
+            _platform.secure_chmod(self.db_path, 0o600)
         except (duckdb.Error, OSError) as exc:
             log.warning('{"event":"cache_reopen_failed","error":"%s"}', exc)
             self._conn = None
