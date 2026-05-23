@@ -110,10 +110,8 @@ CikOrTicker = Annotated[
     str,
     StringConstraints(
         strip_whitespace=True,
-        to_upper=True,
         min_length=1,
         max_length=10,
-        pattern=CIK_OR_TICKER_RE.pattern,
     ),
 ]
 
@@ -140,7 +138,6 @@ FormType = Annotated[
     str,
     StringConstraints(
         strip_whitespace=True,
-        to_upper=True,
         min_length=1,
         max_length=20,
     ),
@@ -172,6 +169,27 @@ class GetCompanyFilingsInput(_BaseInput):
     form_types: list[FormType] | None = Field(default=None, max_length=20)
     limit: int = Field(default=20, ge=1, le=200)
 
+    @field_validator("cik_or_ticker", mode="before")
+    @classmethod
+    def _upper_cik_or_ticker(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip().upper()
+            if not CIK_OR_TICKER_RE.match(v):
+                from .errors import SecValidationError
+
+                raise SecValidationError(
+                    field="cik_or_ticker",
+                    reason=f"must match {CIK_OR_TICKER_RE.pattern}",
+                )
+        return v
+
+    @field_validator("form_types", mode="before")
+    @classmethod
+    def _upper_form_types(cls, v: object) -> object:
+        if isinstance(v, list):
+            return [item.strip().upper() if isinstance(item, str) else item for item in v]
+        return v
+
     @field_validator("form_types")
     @classmethod
     def _validate_form_types(cls, v: list[str] | None) -> list[str] | None:
@@ -194,6 +212,20 @@ class GetForm4InsiderTradesInput(_BaseInput):
     cik_or_ticker: CikOrTicker
     since_days: int = Field(default=30, ge=1, le=365)
 
+    @field_validator("cik_or_ticker", mode="before")
+    @classmethod
+    def _upper_cik_or_ticker(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip().upper()
+            if not CIK_OR_TICKER_RE.match(v):
+                from .errors import SecValidationError
+
+                raise SecValidationError(
+                    field="cik_or_ticker",
+                    reason=f"must match {CIK_OR_TICKER_RE.pattern}",
+                )
+        return v
+
 
 class GetFilingTextInput(_BaseInput):
     """Input for ``get_filing_text``."""
@@ -208,6 +240,13 @@ class SearchFilingsFullTextInput(_BaseInput):
     query: SearchQuery
     form_types: list[FormType] | None = Field(default=None, max_length=20)
     since_days: int = Field(default=90, ge=1, le=3650)
+
+    @field_validator("form_types", mode="before")
+    @classmethod
+    def _upper_form_types(cls, v: object) -> object:
+        if isinstance(v, list):
+            return [item.strip().upper() if isinstance(item, str) else item for item in v]
+        return v
 
     @field_validator("form_types")
     @classmethod

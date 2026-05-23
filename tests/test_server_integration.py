@@ -170,9 +170,7 @@ def _extract_payload(result):  # type: ignore[no-untyped-def]
             return json.loads(result[0].text)
         return {}
     # Object shape
-    sc = getattr(result, "structuredContent", None) or getattr(
-        result, "structured_content", None
-    )
+    sc = getattr(result, "structuredContent", None) or getattr(result, "structured_content", None)
     if isinstance(sc, dict):
         return sc
     content = getattr(result, "content", None)

@@ -112,9 +112,7 @@ async def test_get_company_filings_cache_hit(make_client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_company_filings_cache_bypass(
-    make_client, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_get_company_filings_cache_bypass(make_client, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(_seed_routes(FIXTURE_DIR))
     await runtime_mod.set_client_for_tests(client)
     a = await get_company_filings_impl(GetCompanyFilingsInput(cik_or_ticker="AAPL"))
@@ -189,13 +187,14 @@ async def test_get_filing_text_primary(make_client) -> None:
 
 @pytest.mark.asyncio
 async def test_get_filing_text_complete(make_client) -> None:
-    client = make_client(_seed_routes(FIXTURE_DIR) + [
+    extra = [
         FakeRoute(
             "0000320193-24-000123-submission.txt",
             text_body="full submission text",
             content_type="text/plain",
         ),
-    ])
+    ]
+    client = make_client([*_seed_routes(FIXTURE_DIR), *extra])
     await runtime_mod.set_client_for_tests(client)
     out = await get_filing_text_impl(
         GetFilingTextInput(

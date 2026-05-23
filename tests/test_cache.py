@@ -36,9 +36,7 @@ def test_cache_enabled_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("val,expected", [("1", True), ("yes", True), ("0", False), ("no", False)])
-def test_cache_enabled_truthy(
-    monkeypatch: pytest.MonkeyPatch, val: str, expected: bool
-) -> None:
+def test_cache_enabled_truthy(monkeypatch: pytest.MonkeyPatch, val: str, expected: bool) -> None:
     monkeypatch.setenv("SEC_EDGAR_CACHE_ENABLED", val)
     assert cache_enabled() is expected
 

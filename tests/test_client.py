@@ -30,7 +30,6 @@ from sec_edgar_mcp.errors import (
 )
 from tests.conftest import FakeRoute
 
-
 # ---------------------------------------------------------------------------
 # resolve_user_agent / resolve_rate_limit
 # ---------------------------------------------------------------------------
@@ -225,9 +224,7 @@ async def test_get_text_truncation(make_client) -> None:
     client = make_client(
         [FakeRoute("/big.htm", text_body=big, content_type="text/html")],
     )
-    text, ctype, byte_size, truncated = await client.get_text(
-        f"{WWW_HOST}/big.htm", max_bytes=100
-    )
+    text, ctype, byte_size, truncated = await client.get_text(f"{WWW_HOST}/big.htm", max_bytes=100)
     assert truncated is True
     assert len(text) == 100
     assert byte_size == 1000
@@ -240,9 +237,7 @@ async def test_get_text_no_truncation(make_client) -> None:
     client = make_client(
         [FakeRoute("/small.htm", text_body="hi", content_type="text/html")],
     )
-    text, ctype, byte_size, truncated = await client.get_text(
-        f"{WWW_HOST}/small.htm", max_bytes=1000
-    )
+    text, ctype, byte_size, truncated = await client.get_text(f"{WWW_HOST}/small.htm", max_bytes=1000)
     assert truncated is False
     assert text == "hi"
     assert byte_size == 2
