@@ -3,8 +3,8 @@
 [English](./README.md) | [简体中文](./README_zh.md)
 
 只读 **Model Context Protocol (MCP)** 服务器，将
-[SEC EDGAR](https://www.sec.gov/edgar.shtml) 公开 API 包装为 **6 个工具**
-（4 业务 + 2 meta），可在 Cursor、Claude Code 以及任意 MCP 客户端中使用。
+[SEC EDGAR](https://www.sec.gov/edgar.shtml) 公开 API 包装为 **7 个工具**
+（5 业务 + 2 meta），可在 Cursor、Claude Code 以及任意 MCP 客户端中使用。
 
 > **只读** —— 每个工具都只对 SEC 公开端点发起 HTTPS GET，不会回写。
 
@@ -55,14 +55,15 @@ uv run sec-edgar-mcp        # 在 stdio 上启动 MCP 服务器
 
 ## 工具清单
 
-服务器对外暴露 **6 个工具**：4 业务 + 2 meta。
+服务器对外暴露 **7 个工具**：5 业务 + 2 meta。
 
 | Tool | 何时用 | 入参 | 缓存 TTL |
 | --- | --- | --- | --- |
 | `get_company_filings` | 列出某公司最近的 SEC filings | `cik_or_ticker`, `form_types?`, `limit=20` | 24 h |
-| `get_form4_insider_trades` | 拉某公司 N 天内的 Form 4 内部人交易 | `cik_or_ticker`, `since_days=30` | 6 h |
+| `get_form4_insider_trades` | 拉某公司 N 天内的 Form 4 内部人交易（XBRL 解析后的结构化交易） | `cik_or_ticker`, `since_days=30` | 6 h |
 | `get_filing_text` | 拉某 filing 的全文（HTML/TXT） | `accession_number`, `document_type=primary` | 30 d |
 | `search_filings_full_text` | EDGAR 全文搜索 | `query`, `form_types?`, `since_days=90` | 24 h |
+| `get_8k_with_items` | 按 SEC item 编码筛选 8-K（1.01 / 2.02 / 5.02 / 9.01 等） | `cik_or_ticker`, `item_codes?`, `since_days=30`, `limit=50` | 24 h |
 | `health_check` | 本地健康探针（不调 SEC） | 无 | n/a |
 | `get_server_info` | 本地版本/工具列表（不调 SEC） | 无 | n/a |
 

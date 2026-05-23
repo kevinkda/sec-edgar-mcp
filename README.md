@@ -7,8 +7,8 @@
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 Read-only **Model Context Protocol (MCP)** server that wraps the
-[SEC EDGAR](https://www.sec.gov/edgar.shtml) public API as **6 tools**
-(4 business + 2 meta) for use inside Cursor, Claude Code, and any
+[SEC EDGAR](https://www.sec.gov/edgar.shtml) public API as **7 tools**
+(5 business + 2 meta) for use inside Cursor, Claude Code, and any
 MCP-aware agent.
 
 > **Read-only** — every tool issues plain HTTPS GETs against
@@ -89,11 +89,17 @@ The server exposes **6 tools**: 4 business + 2 meta.
 
 - **When to use:** to surface recent **Form 4** insider transactions
   (Section 16 officer / director trades) for an issuer in the last
-  N days.
+  N days, with **structured transaction data** (date, code, shares,
+  price, ownership form) parsed from the filing's XBRL body.
 - **Input:** `cik_or_ticker: str`, `since_days: int = 30` (1 ≤ N ≤ 365).
-- **Output:** `{ issuer: {...}, transactions: [{ insider_name, role,
-  transaction_date, transaction_code, shares, price_per_share,
-  shares_owned_after, accession_number, ... }, ...] }`.
+- **Output:** `{ issuer: {...}, transactions: [{ accession_number,
+  form, filing_date, primary_document, form4: { issuer_*,
+  reporting_owner_*, is_officer, is_director, transactions: [...],
+  net_buy_value, net_sell_value, ... } | null, parse_error: str | null
+  }], summary: { transaction_count, net_buy_value, net_sell_value,
+  parse_failures } }`.
+- **Security:** XML parsing uses `defusedxml.ElementTree` —
+  XXE / billion-laughs / external-entity references are refused.
 - **Example call:**
 
   ```python
@@ -128,6 +134,23 @@ The server exposes **6 tools**: 4 business + 2 meta.
 
   ```python
   search_filings_full_text(query="cybersecurity incident", form_types=["8-K"], since_days=30)
+  ```
+
+### `get_8k_with_items`
+
+- **When to use:** to pull recent **8-K current-report** filings for an
+  issuer and filter them by SEC item codes — the "show me MSFT's recent
+  Item 5.02 director/officer changes" query.
+- **Input:** `cik_or_ticker: str`, optional `item_codes: list[str]`
+  (e.g. `["1.01", "5.02"]` — must match `^\d{1,2}\.\d{1,2}$`),
+  `since_days: int = 30` (1 ≤ N ≤ 3650), `limit: int = 50` (1 ≤ N ≤ 200).
+- **Output:** `{ company: {...}, filings: [{ accession_number,
+  filed_date, period_of_report, items: list[str], primary_document,
+  primary_doc_url, ... }, ...] }`.
+- **Example call:**
+
+  ```python
+  get_8k_with_items(cik_or_ticker="MSFT", item_codes=["5.02", "1.01"], since_days=180)
   ```
 
 ### `health_check` (meta)

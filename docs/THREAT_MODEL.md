@@ -79,10 +79,32 @@ The remaining concerns are:
   use case**.  Operators who do so are responsible for compliance with
   SEC's Fair Access Policy and any applicable copyright on derived works
   (e.g. third-party normalised SEC datasets).
-- **Form 4 XML parsing**: the current `get_form4_insider_trades` tool
-  returns metadata only.  Parsing the structured XML transaction body
-  is delegated to the agent (via `get_filing_text`) so we don't ship a
-  custom XML parser that could become a future attack surface.
+
+## Form 4 XML parsing — attack surface
+
+As of v0.2 the `get_form4_insider_trades` tool fetches each Form 4
+filing's XML body and parses it via `sec_edgar_mcp._xbrl.parse_form4`.
+XML parsers historically introduce three classes of risk: external
+entity expansion (XXE), exponential entity expansion ("billion
+laughs"), and unbounded numeric / string materialisation.
+
+| Risk | Mitigation |
+| --- | --- |
+| XXE / external entity references | All parsing goes through `defusedxml.ElementTree`, which refuses external general or parameter entity references. |
+| Billion-laughs / exponential entity expansion | `defusedxml` caps entity expansion depth and total expansion bytes. |
+| DTD parsing | Disabled by default in `defusedxml`. |
+| Oversize document | Hard 8 MiB ceiling enforced **before** the XML parser is invoked (`MAX_INPUT_BYTES`). |
+| Pathologically large numbers | `Decimal` strings are rejected if they exceed 30 characters or have an absolute exponent > 30 (`MAX_NUMERIC_DIGITS`). The accumulator catches `decimal.Overflow` defensively. |
+| Unbounded transaction list | Capped at `MAX_TRANSACTIONS = 5_000` per filing. |
+| Bytes-out-of-frame | Per-call cap on Form 4 bodies fetched (`_MAX_BODIES_PER_CALL = 50`) keeps the SEC fair-use budget bounded even on chatty issuers. |
+| Field-level malformation | Tolerated — set field to `None`/`Decimal("0")` and append a structured warning to `Form4Data.raw_warnings` instead of raising. Only structural failures raise the new `Form4ParseError`. |
+
+The parser is exercised by 12 hand-crafted fuzz seeds (XXE, billion-
+laughs, oversize, exotic Unicode, wrong root, …) and three Hypothesis
+property-based generators (well-formed random fields, random binary,
+random Unicode text).  The invariant under test is: **`parse_form4`
+returns `Form4Data` or raises `Form4ParseError` — never any other
+exception**.
 
 ## Cache failure modes
 
