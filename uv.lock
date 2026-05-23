@@ -579,6 +579,18 @@ wheels = [
 ]
 
 [[package]]
+name = "hypothesis"
+version = "6.152.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sortedcontainers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3b/fb/a5651eb0cd03ecee644e8f4d8cd2027b40a08bf1488f46201e794aebe9b5/hypothesis-6.152.9.tar.gz", hash = "sha256:de4711d69ce3a18009047c3b44882810fd0c0348c1558e920a4b0d2c45f59e1e", size = 472009, upload-time = "2026-05-19T17:10:19.586Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/79/d9/40ef7ed22f0c45c2316467edb9afb8fc172cd089cb329c0ee6da6b74416c/hypothesis-6.152.9-py3-none-any.whl", hash = "sha256:9c4fdccb1eac0b12ec740c12290d0e6a0bea3526a3f0bf812b7643bb563c2d8b", size = 538148, upload-time = "2026-05-19T17:10:16.131Z" },
+]
+
+[[package]]
 name = "identify"
 version = "2.6.19"
 source = { registry = "https://pypi.org/simple" }
@@ -1521,9 +1533,10 @@ wheels = [
 
 [[package]]
 name = "sec-edgar-mcp"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
+    { name = "defusedxml" },
     { name = "duckdb" },
     { name = "httpx" },
     { name = "mcp" },
@@ -1535,6 +1548,7 @@ dependencies = [
 dev = [
     { name = "bandit" },
     { name = "detect-secrets" },
+    { name = "hypothesis" },
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "pre-commit" },
@@ -1548,9 +1562,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7,<2" },
+    { name = "defusedxml", specifier = ">=0.7.1,<0.8" },
     { name = "detect-secrets", marker = "extra == 'dev'", specifier = ">=1.5,<2" },
     { name = "duckdb", specifier = ">=1.0,<2.0" },
     { name = "httpx", specifier = ">=0.28.1,<0.29" },
+    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.130,<7" },
     { name = "mcp", specifier = ">=1.6,<2.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10,<2" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7,<3" },
