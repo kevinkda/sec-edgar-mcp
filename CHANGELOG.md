@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] — 2026-05-23
+## [0.1.0] - 2026-05-23
 
 Initial scaffold.
 
@@ -31,3 +31,6 @@ Initial scaffold.
 - 143 unit + integration tests (85.23 % line coverage).
 - Documentation: README (en + zh), `docs/REGISTER.md`,
   `docs/THREAT_MODEL.md`, `docs/RELEASE.md`, `CONTRIBUTING.md`.
+
+[Unreleased]: https://github.com/kevinkda/sec-edgar-mcp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kevinkda/sec-edgar-mcp/releases/tag/v0.1.0
