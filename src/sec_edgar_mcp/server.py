@@ -165,6 +165,14 @@ def _safe_run(name: str, coro: Any) -> dict[str, Any]:
 def _build_mcp() -> FastMCP:
     mcp_app = FastMCP(SERVER_NAME)
 
+    # FastMCP ctor (mcp SDK 1.27.x) does not expose a ``version=`` kwarg, so the
+    # underlying lowlevel ``Server.version`` defaults to ``None`` and the
+    # ``initialize`` response falls back to
+    # ``importlib.metadata.version("mcp")`` (framework version, e.g. 1.27.1).
+    # Inject the project release tag directly on the lowlevel server so
+    # ``serverInfo.version`` reflects this package's ``__version__``.
+    mcp_app._mcp_server.version = SERVER_VERSION
+
     @mcp_app.tool()
     async def get_company_filings(
         cik_or_ticker: str,

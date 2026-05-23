@@ -91,6 +91,33 @@ async def test_call_get_server_info_through_app() -> None:
     assert len(payload["supported_tools"]) == 6
 
 
+def test_initialize_reports_release_tag_version() -> None:
+    """``serverInfo.version`` must report the project's release tag
+    (``sec_edgar_mcp.__version__``), NOT the underlying mcp Python SDK
+    framework version (e.g. ``1.27.1``).
+
+    Regression test — FastMCP's ctor does not accept a ``version=`` kwarg,
+    so the lowlevel ``Server.version`` defaults to ``None`` and the server
+    falls back to ``importlib.metadata.version("mcp")``.  ``server.py``
+    must explicitly assign ``mcp_app._mcp_server.version = SERVER_VERSION``
+    so the ``initialize`` response carries the project tag.
+    """
+    from sec_edgar_mcp import __version__ as expected_version
+
+    a = app()
+    # Probe the lowlevel ``Server`` instance that backs FastMCP — this is
+    # exactly the value the ``initialize`` handler reads when constructing
+    # the ``serverInfo.version`` field of the JSON-RPC response.
+    init_options = a._mcp_server.create_initialization_options()
+    assert init_options.server_name == "sec-edgar-mcp"
+    assert init_options.server_version == expected_version, (
+        f"server_version={init_options.server_version!r} should equal "
+        f"package __version__={expected_version!r}; if it equals the "
+        "mcp SDK version, the FastMCP._mcp_server.version override "
+        "in server.py was lost."
+    )
+
+
 @pytest.mark.asyncio
 async def test_call_search_through_app(make_client) -> None:
     client = make_client(_seed_routes(FIXTURE_DIR))
