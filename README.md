@@ -80,6 +80,7 @@ The server exposes **6 tools**: 4 business + 2 meta.
 - **Output:** `{ company: {...}, filings: [{ accession_number, form,
   filing_date, primary_document, ... }, ...] }`.
 - **Example call:**
+
   ```python
   get_company_filings(cik_or_ticker="AAPL", form_types=["10-K", "10-Q"], limit=5)
   ```
@@ -94,6 +95,7 @@ The server exposes **6 tools**: 4 business + 2 meta.
   transaction_date, transaction_code, shares, price_per_share,
   shares_owned_after, accession_number, ... }, ...] }`.
 - **Example call:**
+
   ```python
   get_form4_insider_trades(cik_or_ticker="MSFT", since_days=14)
   ```
@@ -108,6 +110,7 @@ The server exposes **6 tools**: 4 business + 2 meta.
 - **Output:** `{ accession_number, document_url, content_type, text,
   truncated, byte_size }`. Caps at 5 MB to keep MCP frames bounded.
 - **Example call:**
+
   ```python
   get_filing_text(accession_number="0000320193-24-000123")
   ```
@@ -122,6 +125,7 @@ The server exposes **6 tools**: 4 business + 2 meta.
   company, form, filing_date, snippet, ... }, ...] }`. Pages capped at
   100 hits.
 - **Example call:**
+
   ```python
   search_filings_full_text(query="cybersecurity incident", form_types=["8-K"], since_days=30)
   ```
