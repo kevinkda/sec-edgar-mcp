@@ -213,6 +213,92 @@ def test_parse_numeric_too_large_warns_and_drops() -> None:
     assert any(w.startswith("numeric_too_large:") for w in data.raw_warnings)
 
 
+_EXPONENT_OVERFLOW_DOC = b"""<?xml version="1.0"?>
+<ownershipDocument>
+    <documentType>4</documentType>
+    <issuer/>
+    <reportingOwner/>
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <transactionCoding><transactionCode>S</transactionCode></transactionCoding>
+            <transactionAmounts>
+                <transactionShares><value>1</value></transactionShares>
+                <transactionPricePerShare><value>1E1000000</value></transactionPricePerShare>
+                <transactionAcquiredDisposedCode><value>D</value></transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <ownershipNature><directOrIndirectOwnership><value>D</value></directOrIndirectOwnership></ownershipNature>
+        </nonDerivativeTransaction>
+    </nonDerivativeTable>
+</ownershipDocument>
+"""
+
+
+def test_parse_decimal_with_huge_exponent_is_dropped() -> None:
+    """A scientific-notation Decimal with a multi-million exponent is
+    rejected because multiplying it would trigger ``decimal.Overflow``.
+    """
+    data = parse_form4(_EXPONENT_OVERFLOW_DOC)
+    assert data.transaction_count == 1
+    assert data.transactions[0].price_per_share is None
+    assert any(w.startswith("numeric_exponent_too_large:") for w in data.raw_warnings)
+    # Net values stay zero because the price was dropped.
+    assert data.net_buy_value == Decimal("0")
+    assert data.net_sell_value == Decimal("0")
+
+
+def test_accumulate_net_values_tolerates_overflow_in_multiplication() -> None:
+    """Direct-call test for the overflow guard inside ``_accumulate_net_values``.
+
+    Decimal multiplication of two ``1E999999999`` operands exceeds the
+    default context's ``Emax`` and raises ``decimal.Overflow``; the
+    accumulator must catch it, append a warning, and leave net values
+    unchanged.
+    """
+    from sec_edgar_mcp._xbrl import _accumulate_net_values
+
+    monster = Decimal("1E999999999")
+    tx = Form4Transaction(
+        transaction_date=date(2024, 1, 1),
+        code="P",
+        shares=monster,
+        price_per_share=monster,
+        direct_or_indirect="D",
+        acquired_or_disposed="A",
+        post_transaction_shares=Decimal("0"),
+        is_derivative=False,
+        security_title="Common Stock",
+        derivative_security_title=None,
+    )
+    warnings: list[str] = []
+    nb, ns = _accumulate_net_values(tx, Decimal("0"), Decimal("0"), warnings)
+    assert nb == Decimal("0")
+    assert ns == Decimal("0")
+    assert "net_value_overflow" in warnings
+
+
+def test_accumulate_net_values_skips_when_price_is_none() -> None:
+    """Gifts / grants / unpriced transactions never contribute."""
+    from sec_edgar_mcp._xbrl import _accumulate_net_values
+
+    tx = Form4Transaction(
+        transaction_date=date(2024, 1, 1),
+        code="G",
+        shares=Decimal("100"),
+        price_per_share=None,
+        direct_or_indirect="D",
+        acquired_or_disposed="D",
+        post_transaction_shares=Decimal("0"),
+        is_derivative=False,
+        security_title="Common Stock",
+        derivative_security_title=None,
+    )
+    warnings: list[str] = []
+    nb, ns = _accumulate_net_values(tx, Decimal("123"), Decimal("456"), warnings)
+    assert nb == Decimal("123")
+    assert ns == Decimal("456")
+    assert warnings == []
+
+
 _NAMESPACED_DOC = b"""<?xml version="1.0"?>
 <ns:ownershipDocument xmlns:ns="http://www.sec.gov/edgar/ownership">
     <ns:documentType>4</ns:documentType>

@@ -49,7 +49,7 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict, dataclass, field
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException
 from typing import Any, Final, Literal
 from xml.etree.ElementTree import ParseError as ETParseError
 
@@ -237,16 +237,7 @@ def parse_form4(xml_bytes: bytes, *, accession_number: str = "") -> Form4Data:
         if tx is None:
             continue
         transactions.append(tx)
-        # Net value calculation: only when we have both shares and a price.
-        # A = acquired (buy-side); D = disposed (sell-side).  Gifts (G code)
-        # carry no price → never contribute.
-        if tx.price_per_share is None or tx.price_per_share == 0:
-            continue
-        value = tx.shares * tx.price_per_share
-        if tx.acquired_or_disposed == "A":
-            net_buy_value += value
-        elif tx.acquired_or_disposed == "D":
-            net_sell_value += value
+        net_buy_value, net_sell_value = _accumulate_net_values(tx, net_buy_value, net_sell_value, warnings)
 
     return Form4Data(
         accession_number=accession_number,
@@ -273,6 +264,40 @@ def parse_form4(xml_bytes: bytes, *, accession_number: str = "") -> Form4Data:
 # ---------------------------------------------------------------------------
 # Per-transaction parsing
 # ---------------------------------------------------------------------------
+
+
+def _accumulate_net_values(
+    tx: Form4Transaction,
+    net_buy_value: Decimal,
+    net_sell_value: Decimal,
+    warnings: list[str],
+) -> tuple[Decimal, Decimal]:
+    """Fold *tx* into the running net buy / net sell totals.
+
+    Skips:
+        * transactions without a price (gifts / grants / option exercises);
+        * transactions whose ``shares * price`` overflows the active
+          ``decimal.Context`` (Hypothesis fuzz exposes this with
+          scientific-notation Decimals).
+    """
+    if tx.price_per_share is None or tx.price_per_share == 0:
+        return net_buy_value, net_sell_value
+    try:
+        value = tx.shares * tx.price_per_share
+    except DecimalException:
+        warnings.append("net_value_overflow")
+        return net_buy_value, net_sell_value
+    if tx.acquired_or_disposed == "A":
+        try:
+            net_buy_value += value
+        except DecimalException:  # pragma: no cover - extreme overflow accumulation
+            warnings.append("net_value_overflow")
+    elif tx.acquired_or_disposed == "D":
+        try:
+            net_sell_value += value
+        except DecimalException:  # pragma: no cover - extreme overflow accumulation
+            warnings.append("net_value_overflow")
+    return net_buy_value, net_sell_value
 
 
 def _iter_transactions(root: Any) -> list[tuple[Any, bool]]:
@@ -446,10 +471,20 @@ def _parse_decimal_optional(
         return None
     try:
         # Decimal(str(...)) avoids any binary-float-precision detour.
-        return Decimal(str(s))
-    except (InvalidOperation, ValueError, TypeError):
+        parsed = Decimal(str(s))
+    except (DecimalException, ValueError, TypeError):
         warnings.append(f"unparseable_decimal:{field_name}")
         return None
+    # Reject Decimals with extreme exponents — multiplying two such
+    # values can trigger ``decimal.Overflow`` when we compute net buy /
+    # net sell totals.  ``MAX_NUMERIC_DIGITS`` doubles as the absolute
+    # exponent ceiling so a fuzz-generated ``"1E1000000"`` is dropped.
+    sign, _digits, exponent = parsed.as_tuple()
+    del sign
+    if isinstance(exponent, int) and abs(exponent) > MAX_NUMERIC_DIGITS:
+        warnings.append(f"numeric_exponent_too_large:{field_name}")
+        return None
+    return parsed
 
 
 # ---------------------------------------------------------------------------
