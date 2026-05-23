@@ -1,0 +1,40 @@
+// Project-level markdownlint-cli2 config for sec-edgar-mcp.
+// Mirrors schwab-marketdata-mcp so both repos validate against the same ruleset.
+{
+  "config": {
+    "default": true,
+
+    "MD013": {
+      "line_length": 120,
+      "tables": false,
+      "code_blocks": false,
+      "headings": false
+    },
+
+    "MD024": { "siblings_only": true },
+
+    "MD041": false,
+
+    "MD033": {
+      "allowed_elements": ["br", "details", "summary", "kbd", "sub", "sup"]
+    },
+
+    "MD026": { "punctuation": ".,;:!" },
+
+    "MD004": { "style": "dash" },
+
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "node_modules/**",
+    ".git/**",
+    ".venv/**",
+    "venv/**",
+    "htmlcov/**",
+    "build/**",
+    "dist/**",
+    "LICENSE",
+    "LICENSE.md"
+  ]
+}
