@@ -1,0 +1,111 @@
+# Pre-commit hooks for sec-edgar-mcp.
+#
+# Bootstrap (run once after `git clone`):
+#     uv sync --extra dev
+#     uv run pre-commit install
+
+repos:
+  # ---------------------------------------------------------------------
+  # Generic hygiene
+  # ---------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^tests/fixtures/.*\.json$
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      - id: detect-private-key
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # ---------------------------------------------------------------------
+  # Secret scanning — gitleaks (manual stage only; needs public internet)
+  # ---------------------------------------------------------------------
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        stages: [manual]
+
+  # ---------------------------------------------------------------------
+  # Secret scanning — detect-secrets (baseline-aware, always on)
+  # ---------------------------------------------------------------------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - "--baseline"
+          - ".secrets.baseline"
+        exclude: |
+          (?x)^(
+              uv\.lock|
+              \.secrets\.baseline|
+              tests/fixtures/.*\.json
+          )$
+
+  # ---------------------------------------------------------------------
+  # Lint + format — ruff (driven by the project venv via `uv run`)
+  # ---------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (lint, --fix)
+        entry: uv run ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff-format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+  # ---------------------------------------------------------------------
+  # Type check — mypy
+  # ---------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (--strict on src/)
+        entry: uv run mypy --strict --ignore-missing-imports
+        language: system
+        types: [python]
+        files: ^src/
+        require_serial: true
+        pass_filenames: false
+        args: ["src/"]
+
+  # ---------------------------------------------------------------------
+  # Local sanity hook — block the .gitignore footgun where uv.lock would
+  # be excluded.
+  # ---------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: ensure-uv-lock-tracked
+        name: ensure uv.lock is tracked (.gitignore reverse rule)
+        entry: scripts/ensure-uv-lock-tracked.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  # ---------------------------------------------------------------------
+  # Markdown lint
+  # ---------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: markdownlint-cli2
+        name: markdownlint-cli2 (--fix)
+        entry: npx --yes markdownlint-cli2 --fix
+        language: system
+        types: [markdown]
+        require_serial: true
