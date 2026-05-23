@@ -45,12 +45,18 @@ def _seed_routes(fixture_dir: Path) -> list[FakeRoute]:
     index = json.loads((fixture_dir / "index_aapl_10k.json").read_text(encoding="utf-8"))
     body = (fixture_dir / "aapl_10k.htm").read_text(encoding="utf-8")
     search = json.loads((fixture_dir / "search_cybersecurity.json").read_text(encoding="utf-8"))
+    form4_xml = (fixture_dir / "form4_aapl.xml").read_text(encoding="utf-8")
     return [
         FakeRoute("/files/company_tickers.json", json_body=tickers),
         FakeRoute("/submissions/CIK", json_body=submissions),
         FakeRoute("-index.json", json_body=index),
         FakeRoute("aapl-20240928.htm", text_body=body, content_type="text/html"),
         FakeRoute("/LATEST/search-index", json_body=search),
+        FakeRoute(
+            "wf-form4_171430123456.xml",
+            text_body=form4_xml,
+            content_type="application/xml",
+        ),
     ]
 
 
@@ -135,8 +141,96 @@ async def test_get_form4_normal(make_client) -> None:
         GetForm4InsiderTradesInput(cik_or_ticker="AAPL", since_days=365),
     )
     assert out["count"] == 1
-    assert out["transactions"][0]["form"] == "4"
+    row = out["transactions"][0]
+    assert row["form"] == "4"
     assert out["issuer"]["cik"] == "0000320193"
+    # New v0.2 structured payload — fixture parsed without errors.
+    assert row["parse_error"] is None
+    assert isinstance(row["form4"], dict)
+    assert row["form4"]["transaction_count"] == 3
+    assert row["form4"]["reporting_owner_name"] == "COOK TIMOTHY D"
+    assert out["summary"]["transaction_count"] == 3
+    # The fixture has one priced sale at 100,000 shares * 170.50 = 17,050,000.
+    assert out["summary"]["net_sell_value"] == "17050000.00"
+    assert out["summary"]["net_buy_value"] == "0"
+    assert out["summary"]["parse_failures"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_form4_xbrl_fetch_failure_does_not_break_tool(make_client) -> None:
+    """A 404 on a single Form 4 body must surface as parse_error, not raise."""
+    routes = _seed_routes(FIXTURE_DIR)
+    # Override the form 4 body route with a 404.
+    routes = [r for r in routes if "wf-form4" not in r.url_substring]
+    routes.append(FakeRoute("wf-form4_171430123456.xml", status_code=404, json_body={}))
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    out = await get_form4_insider_trades_impl(
+        GetForm4InsiderTradesInput(cik_or_ticker="AAPL", since_days=365),
+    )
+    assert out["count"] == 1
+    row = out["transactions"][0]
+    assert row["form4"] is None
+    assert row["parse_error"] is not None
+    assert "SecNotFoundError" in row["parse_error"]
+    assert out["summary"]["parse_failures"] == 1
+    assert out["summary"]["transaction_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_form4_xbrl_malformed_body_surfaces_parse_error(make_client) -> None:
+    """A malformed XML body surfaces Form4ParseError reason, no crash."""
+    routes = _seed_routes(FIXTURE_DIR)
+    routes = [r for r in routes if "wf-form4" not in r.url_substring]
+    routes.append(
+        FakeRoute(
+            "wf-form4_171430123456.xml",
+            text_body="<not-an-ownership-doc/>",
+            content_type="application/xml",
+        ),
+    )
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    out = await get_form4_insider_trades_impl(
+        GetForm4InsiderTradesInput(cik_or_ticker="AAPL", since_days=365),
+    )
+    row = out["transactions"][0]
+    assert row["form4"] is None
+    assert row["parse_error"] is not None
+    assert "expected root" in row["parse_error"]
+
+
+@pytest.mark.asyncio
+async def test_get_form4_missing_primary_document(make_client) -> None:
+    """If the submissions index has no primaryDocument, tool returns
+    parse_error without attempting an HTTP fetch."""
+    routes = _seed_routes(FIXTURE_DIR)
+    # Patch the submissions JSON to drop the primary document for the Form 4.
+    submissions = json.loads(
+        (FIXTURE_DIR / "submissions_aapl.json").read_text(encoding="utf-8"),
+    )
+    from datetime import UTC, datetime, timedelta
+
+    today = datetime.now(tz=UTC).date()
+    submissions["filings"]["recent"]["filingDate"] = [
+        (today - timedelta(days=10)).isoformat(),
+        (today - timedelta(days=20)).isoformat(),
+        (today - timedelta(days=30)).isoformat(),
+        (today - timedelta(days=45)).isoformat(),
+    ]
+    submissions["filings"]["recent"]["primaryDocument"][3] = ""
+    routes = [
+        r if "/submissions/CIK" not in r.url_substring else FakeRoute("/submissions/CIK", json_body=submissions)
+        for r in routes
+    ]
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    out = await get_form4_insider_trades_impl(
+        GetForm4InsiderTradesInput(cik_or_ticker="AAPL", since_days=365),
+    )
+    row = out["transactions"][0]
+    assert row["form4"] is None
+    assert "no primary_document" in (row["parse_error"] or "")
 
 
 @pytest.mark.asyncio
