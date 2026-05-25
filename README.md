@@ -155,8 +155,22 @@ The server exposes **6 tools**: 4 business + 2 meta.
 
 ### `health_check` (meta)
 
-Local probe: returns server version, cache state, rate-limit budget, and
-recent-error counter. Never calls SEC.
+Local + server-side health probe. Returns server version, cache state,
+rate-limit budget, recent-error counter, and the new `sec_ua_reachable`
+field (R7) — a cached HEAD probe against EDGAR that reports whether
+SEC's edge actually accepts the configured `SEC_EDGAR_USER_AGENT`:
+
+| `sec_ua_reachable.status` | Meaning |
+| --- | --- |
+| `ACCEPTED` | SEC returned 200 to a HEAD on the probe URL. |
+| `REJECTED_HTML_403` | SEC fair-access policy banned the UA. **Fix `.env`.** |
+| `UNCONFIGURED` | UA missing, malformed, or contains a known placeholder (e.g. `noreply.github.com`). |
+| `TIMEOUT` | Probe timed out (transient — does not affect `overall_status`). |
+| `NETWORK_ERROR` | Other HTTP / network failure (transient). |
+
+`overall_status` aggregates: `unhealthy` if `UNCONFIGURED`, `degraded`
+if `REJECTED_HTML_403`, `ok` otherwise. Probe result cached 5 minutes
+to avoid hidden rate-limit consumption.
 
 ### `get_server_info` (meta)
 

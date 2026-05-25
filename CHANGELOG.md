@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **R7 server-side UA reachability probe** (`_ua_probe.py`): the
+  `health_check` tool now exposes a new `sec_ua_reachable` field that
+  issues a single cached `HEAD` request to a cheap EDGAR endpoint
+  (`browse-edgar?CIK=0000320193&type=4&count=1`) and reports whether
+  SEC's edge actually accepts the configured `SEC_EDGAR_USER_AGENT`.
+  This catches the case where the env var matches SEC's textual format
+  (e.g. `noreply.github.com` placeholders) but SEC has IP- or
+  pattern-banned the UA, which previously passed local
+  `user_agent_configured: true` validation only to trip a 403 mid-call.
+  The probe returns one of `ACCEPTED` / `REJECTED_HTML_403` /
+  `TIMEOUT` / `NETWORK_ERROR` / `UNCONFIGURED`, with results cached
+  for 5 minutes (sha256-keyed) to avoid hidden rate-limit consumption.
+  100 % line + branch coverage on `_ua_probe.py`.
+
+### Changed
+
+- `health_check` now returns an `overall_status` field aggregating the
+  probe result:
+    * `unhealthy` when `sec_ua_reachable.status == UNCONFIGURED`
+      (server cannot call SEC at all).
+    * `degraded` when `sec_ua_reachable.status == REJECTED_HTML_403`
+      (UA explicitly banned — user must fix `.env`).
+    * `ok` otherwise; transient `TIMEOUT` / `NETWORK_ERROR` results
+      do **not** downgrade `overall_status` because they are not the
+      server's fault.
+  All pre-R7 fields are preserved unchanged for backward compatibility.
+
 ## [0.2.0] - 2026-05-24
 
 ### Added

@@ -64,7 +64,7 @@ uv run sec-edgar-mcp        # 在 stdio 上启动 MCP 服务器
 | `get_filing_text` | 拉某 filing 的全文（HTML/TXT） | `accession_number`, `document_type=primary` | 30 d |
 | `search_filings_full_text` | EDGAR 全文搜索 | `query`, `form_types?`, `since_days=90` | 24 h |
 | `get_8k_with_items` | 按 SEC item 编码筛选 8-K（1.01 / 2.02 / 5.02 / 9.01 等） | `cik_or_ticker`, `item_codes?`, `since_days=30`, `limit=50` | 24 h |
-| `health_check` | 本地健康探针（不调 SEC） | 无 | n/a |
+| `health_check` | 本地+服务端健康探针：本地配置 + `sec_ua_reachable`（HEAD 探测 SEC 是否真的接受当前 UA，5 min 缓存） | 无 | n/a |
 | `get_server_info` | 本地版本/工具列表（不调 SEC） | 无 | n/a |
 
 详细的"何时用 / 入参 / 返回 / 示例"四段式见 [README.md](./README.md#tooling-surface)。
