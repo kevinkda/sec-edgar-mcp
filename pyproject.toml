@@ -1,6 +1,6 @@
 [project]
 name = "sec-edgar-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "Read-only MCP server for SEC EDGAR public API (filings, Form 4, full-text search)."
 readme = "README.md"
 requires-python = ">=3.11"
