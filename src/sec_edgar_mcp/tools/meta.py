@@ -12,6 +12,7 @@ from typing import Any
 
 import mcp
 
+from .._ua_probe import probe_ua_reachability
 from ..cache import cache_enabled, get_cache
 from ..client import (
     ENV_USER_AGENT,
@@ -57,9 +58,36 @@ def _safe_cache_summary() -> dict[str, Any]:
 
 
 async def health_check_impl() -> dict[str, Any]:
-    """Local health probe — never calls SEC."""
+    """Local health probe with optional server-side UA reachability check.
+
+    The local ``user_agent_configured`` flag only checks env-var format.
+    ``sec_ua_reachable`` (R7) sends a single cached HEAD request to a
+    cheap EDGAR endpoint and reports whether SEC's edge actually accepts
+    the configured UA — the missing layer that lets a malformed
+    ``noreply`` UA pass local format validation but later trip a 403
+    fair-access rejection mid-playbook.
+
+    ``overall_status`` aggregates these:
+
+        * ``unhealthy`` — UA is unconfigured (server cannot call SEC).
+        * ``degraded`` — UA is configured but SEC explicitly rejects it.
+        * ``ok`` — everything else, including transient probe failures
+          (TIMEOUT / NETWORK_ERROR), which we deliberately do **not**
+          downgrade — a flaky probe is not a server-health problem.
+    """
     ua = _safe_user_agent_status()
     cache_summary = _safe_cache_summary()
+
+    raw_ua = os.environ.get(ENV_USER_AGENT, "").strip()
+    probe = probe_ua_reachability(raw_ua)
+
+    if probe.status == "UNCONFIGURED":
+        overall_status = "unhealthy"
+    elif probe.status == "REJECTED_HTML_403":
+        overall_status = "degraded"
+    else:
+        overall_status = "ok"
+
     return {
         "server_version": _SERVER_VERSION,
         "user_agent_configured": ua["configured"],
@@ -70,6 +98,8 @@ async def health_check_impl() -> dict[str, Any]:
         "cache_size_mb": cache_summary["size_mb"],
         "cache_hit_rate_24h": cache_summary["hit_rate_24h"],
         "platform_supported": True,
+        "sec_ua_reachable": probe.to_dict(),
+        "overall_status": overall_status,
     }
 
 
