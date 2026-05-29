@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<ownershipDocument>
+
+    <schemaVersion>X0609</schemaVersion>
+
+    <documentType>4/A</documentType>
+
+    <periodOfReport>2026-03-10</periodOfReport>
+
+    <dateOfOriginalSubmission>2026-03-11</dateOfOriginalSubmission>
+
+    <issuer>
+        <issuerCik>0000080424</issuerCik>
+        <issuerName>PROCTER &amp; GAMBLE Co</issuerName>
+        <issuerTradingSymbol>PG</issuerTradingSymbol>
+        <issuerForeignTradingSymbol></issuerForeignTradingSymbol>
+    </issuer>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001973769</rptOwnerCik>
+            <rptOwnerName>Portman Robert Jones</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerStreet1>ONE PROCTER &amp; GAMBLE PLAZA</rptOwnerStreet1>
+            <rptOwnerStreet2></rptOwnerStreet2>
+            <rptOwnerCity>CINCINNATI</rptOwnerCity>
+            <rptOwnerState>OH</rptOwnerState>
+            <rptOwnerZipCode>45202</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>1</isDirector>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <aff10b5One>0</aff10b5One>
+
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Stock</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-03-10</value>
+            </transactionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>A</transactionCode>
+                <equitySwapInvolved>0</equitySwapInvolved>
+            </transactionCoding>
+            <transactionTimeliness></transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>49</value>
+                    <footnoteId id="F1"/>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>0</value>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>5065.7148</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>D</value>
+                </directOrIndirectOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+    </nonDerivativeTable>
+
+    <footnotes>
+        <footnote id="F1">The original Form 4, filed on March 11, 2026, is being amended by this Form 4/A solely to correct an inadvertent, administrative error.  The original Form 4 reported that the Reporting Person was awarded 193 Restricted Stock Units (&quot;RSUs&quot; ) pursuant to The Procter &amp; Gamble 2025 Stock and Incentive Compensation Plan.  However, as reported in this amended form, the Reporting Person was awarded 49 RSUs.  No other changes have been made to the original filing.</footnote>
+    </footnotes>
+
+    <ownerSignature>
+        <signatureName>/s/ Wednesday Shipp, attorney-in-fact for Robert Portman</signatureName>
+        <signatureDate>2026-03-19</signatureDate>
+    </ownerSignature>
+</ownershipDocument>
