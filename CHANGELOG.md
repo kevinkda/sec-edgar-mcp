@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-29
+
+### Fixed
+
+- **R8 — Form 4 XBRL parser real-corpus remediation** (closes
+  v0.4.1 hotfix; PB-3 incident 2026-05-25). The
+  `get_form4_insider_trades` tool was fetching SEC EDGAR's
+  XSLT-rendered HTML view (`xsl<style>/<doc>.xml`) instead of the raw
+  ownership XML, causing every Form 4 in PB-3's 70-entry watchlist
+  to fail with a single uniform `malformed XML: mismatched tag:
+  line 29, column 16` error. Two-layer fix:
+    1. `tools/insider.py:_strip_xslt_prefix` strips the
+       `xsl<style>/` segment from `submissions.recent.primaryDocument`
+       so the URL points at the raw `<doc>.xml` ownership document.
+    2. `_xbrl.py:_looks_like_html_rendering` defensively detects
+       `<!DOCTYPE html>` / `<html>` heads (case-insensitive, BOM- and
+       prolog-tolerant) and raises a structured
+       `Form4ParseError(reason="received SEC XSLT-rendered HTML, …")`
+       so any future regression surfaces with a self-diagnosing
+       message instead of a generic XML parse error.
+- New `tests/fixtures/form4_real_corpus/` directory with **80 real
+  SEC EDGAR Form 4 ownership XML bodies** (raw, not XSLT-rendered)
+  captured 2026-05-29 across 20 issuers spanning tech / financial /
+  staples / energy / healthcare / ADR / dual-class. These fixtures
+  exercise 9 distinct Section 16 transaction codes (S, M, F, A, G,
+  P, C, H, D) over 242 transactions and form the parser's
+  contract-test corpus.
+- New `tests/test_xbrl_real_corpus.py` invariants:
+    * directory holds ≥ 50 samples;
+    * every entry parses without exception;
+    * aggregate parse rate ≥ 95 %;
+    * corpus exercises ≥ 5 distinct transaction codes.
+- `tests/test_xbrl_fuzz.py` upgraded with corpus-seeded
+  `@example` decorators on the random-bytes hypothesis fuzzer plus a
+  parametrised real-corpus seed test, so any refactor that drops
+  support for the canonical SEC XML shape fails the fuzz suite,
+  not just the corpus invariant.
+
+### Added
+
+- `scripts/fetch_form4_corpus.py` — one-shot bootstrap fetcher
+  (not imported by production) that pulls a diverse Form 4 corpus
+  from SEC EDGAR using the configured `SEC_EDGAR_USER_AGENT` and
+  the same fair-use rate budget as the production client. Documented
+  in `tests/fixtures/form4_real_corpus/README.md`.
+
+### Compatibility
+
+- Test count: 273 → 446 passing on Linux (+173 tests including 80
+  parametrised corpus + 80 fuzz-seeded entries + helper coverage).
+- Total coverage: 91.08 % → 92.13 %.
+- `_xbrl.py` 97 % → 98 % branch + line; `tools/insider.py` 92 % → 97 %.
+- `src/sec_edgar_mcp/__init__.py:__version__` updated to `0.2.2`
+  (also corrects a stale `0.2.0` value carried forward from v0.2.0).
+
+### Security
+
+- `_looks_like_html_rendering` operates on the leading 1 KiB only,
+  before any `defusedxml` parsing, so an oversized HTML payload is
+  rejected without exposing the secure parser to it. No relaxation
+  of the existing XXE / billion-laughs / DTD posture; defusedxml
+  remains the only XML parsing path.
+
 ## [0.2.1] - 2026-05-25
 
 ### Added
@@ -159,7 +222,8 @@ Initial scaffold.
 - Documentation: README (en + zh), `docs/REGISTER.md`,
   `docs/THREAT_MODEL.md`, `docs/RELEASE.md`, `CONTRIBUTING.md`.
 
-[Unreleased]: https://github.com/kevinkda/sec-edgar-mcp/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/kevinkda/sec-edgar-mcp/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/kevinkda/sec-edgar-mcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/kevinkda/sec-edgar-mcp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/kevinkda/sec-edgar-mcp/releases/tag/v0.2.0
 [0.1.1]: https://github.com/kevinkda/sec-edgar-mcp/releases/tag/v0.1.1
