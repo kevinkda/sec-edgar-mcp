@@ -7,7 +7,12 @@ Covers two flavours of input:
    …).  Every seed must either return a :class:`Form4Data` (with optional
    ``raw_warnings``) or raise :class:`Form4ParseError`.  Nothing else.
 
-2. **Hypothesis property-based fuzzing** — generated payloads built from
+2. **Real-corpus seeds** — every entry in
+   ``tests/fixtures/form4_real_corpus/`` is fed back into the
+   property-based fuzzer as an ``@example`` (R8 invariant: corpus
+   entries must always be reachable through the fuzz contract too).
+
+3. **Hypothesis property-based fuzzing** — generated payloads built from
    small XML primitives.  We assert the same invariant across hundreds of
    examples: parser must not raise any exception other than
    :class:`Form4ParseError`.
@@ -17,8 +22,10 @@ The shared invariant is encoded in :func:`_assert_safe`.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from sec_edgar_mcp._xbrl import (
@@ -159,6 +166,33 @@ def test_fuzz_hand_crafted_seed_is_safe(payload: bytes) -> None:
     _assert_safe(payload)
 
 
+# ---------------------------------------------------------------------------
+# R8 — real-corpus seeds.  The corpus represents the *contract surface*:
+# every snapshot must satisfy the same invariant as hypothesis-generated
+# inputs (no surprise exceptions, only Form4ParseError or Form4Data).
+# ---------------------------------------------------------------------------
+
+
+_CORPUS_DIR = Path(__file__).parent / "fixtures" / "form4_real_corpus"
+_CORPUS_PAYLOADS: list[bytes] = sorted(
+    (p.read_bytes() for p in _CORPUS_DIR.glob("*.xml")),
+    key=len,
+)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    _CORPUS_PAYLOADS,
+    ids=lambda b: f"corpus[{len(b)}b]",
+)
+def test_fuzz_real_corpus_seed_is_safe(payload: bytes) -> None:
+    """Every real-corpus entry must satisfy the fuzz invariant."""
+    _assert_safe(payload)
+    # Real corpus must additionally *succeed* — they are valid XML.
+    data = parse_form4(payload)
+    assert isinstance(data, Form4Data)
+
+
 def test_negative_shares_seed_returns_signed_decimal() -> None:
     """The negative-shares seed should parse and surface a negative value."""
     payload = _FUZZ_SEEDS[6]
@@ -272,9 +306,15 @@ def test_hypothesis_well_formed_random_fields_is_safe(
     _assert_safe(payload)
 
 
+_CORPUS_FUZZ_SAMPLES: tuple[bytes, ...] = tuple(_CORPUS_PAYLOADS[:5])
+
+
 @given(
     blob=st.binary(min_size=0, max_size=512),
 )
+@example(blob=_CORPUS_FUZZ_SAMPLES[0] if _CORPUS_FUZZ_SAMPLES else b"")
+@example(blob=_CORPUS_FUZZ_SAMPLES[1] if len(_CORPUS_FUZZ_SAMPLES) > 1 else b"")
+@example(blob=_CORPUS_FUZZ_SAMPLES[2] if len(_CORPUS_FUZZ_SAMPLES) > 2 else b"")
 @settings(
     max_examples=80,
     deadline=None,
@@ -283,6 +323,10 @@ def test_hypothesis_well_formed_random_fields_is_safe(
 def test_hypothesis_random_bytes_is_safe(blob: bytes) -> None:
     """Pure-noise input must always either parse (vanishingly rare) or
     raise :class:`Form4ParseError` — never let a stray exception escape.
+
+    R8: also seed the strategy with three real corpus samples so any
+    refactor that drops support for the canonical SEC XML shape fails
+    here, not just in the corpus invariant test.
     """
     _assert_safe(blob)
 

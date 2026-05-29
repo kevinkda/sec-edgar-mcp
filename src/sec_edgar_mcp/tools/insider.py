@@ -129,9 +129,19 @@ async def _enrich_with_xbrl(
     accession: str,
     primary_doc: str,
 ) -> None:
-    """Fetch + parse the Form 4 XML body for *row*; mutate it in-place."""
+    """Fetch + parse the Form 4 XML body for *row*; mutate it in-place.
+
+    SEC's submissions API returns the *XSLT-rendered HTML* path
+    (``xsl<style>/<doc>.xml``) as ``primaryDocument`` for Form 4.  The
+    raw machine-readable ownership XML lives one directory up at
+    ``<doc>.xml``; fetching the XSLT path returns an HTML page that
+    cannot be parsed as XBRL (this is the root cause of the v0.2.0/v0.2.1
+    "70/70 mismatched tag" regression observed in PB-3 2026-05-25).
+    We strip any leading ``xsl<style>/`` segment before building the URL.
+    """
     accession_no_dashes = accession.replace("-", "")
-    xml_url = f"{WWW_HOST}/Archives/edgar/data/{cik_int}/{accession_no_dashes}/{primary_doc}"
+    raw_doc = _strip_xslt_prefix(primary_doc)
+    xml_url = f"{WWW_HOST}/Archives/edgar/data/{cik_int}/{accession_no_dashes}/{raw_doc}"
     try:
         text, _ctype, _byte_size, _truncated = await client.get_text(xml_url)
     except SecError as exc:
@@ -146,6 +156,32 @@ async def _enrich_with_xbrl(
         return
     row["form4"] = parsed.to_dict()
     row["parse_error"] = None
+
+
+def _strip_xslt_prefix(primary_doc: str) -> str:
+    """Strip an SEC XSLT-style sub-directory from a primary-document path.
+
+    SEC publishes Form 4 with the XSLT-rendered HTML view at
+    ``xsl<style>/<doc>.xml`` (e.g. ``xslF345X06/form4.xml``); the same
+    archive directory contains the raw ownership XML at ``<doc>.xml``.
+    This helper returns the raw form when the XSLT prefix is detected
+    and is a no-op otherwise.
+
+    Examples:
+
+        >>> _strip_xslt_prefix("xslF345X06/form4.xml")
+        'form4.xml'
+        >>> _strip_xslt_prefix("xslF345X05/wf-form4_123.xml")
+        'wf-form4_123.xml'
+        >>> _strip_xslt_prefix("primary_doc.xml")
+        'primary_doc.xml'
+    """
+    if "/" not in primary_doc:
+        return primary_doc
+    prefix, _, rest = primary_doc.partition("/")
+    if prefix.startswith("xsl") and rest:
+        return rest
+    return primary_doc
 
 
 def _filter_form4(recent: Any, *, cik: str, cutoff_iso: str) -> list[dict[str, Any]]:
@@ -233,4 +269,4 @@ def _cache_params(args: GetForm4InsiderTradesInput) -> dict[str, Any]:
     }
 
 
-__all__ = ["get_form4_insider_trades_impl"]
+__all__ = ["_strip_xslt_prefix", "get_form4_insider_trades_impl"]

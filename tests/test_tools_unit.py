@@ -638,3 +638,34 @@ async def test_get_cache_stats_disabled(monkeypatch: pytest.MonkeyPatch) -> None
     cache_mod.reset_cache_singleton()
     out = await get_cache_stats_impl()
     assert out["enabled"] is False
+
+
+# ---------------------------------------------------------------------------
+# R8 hotfix — XSLT prefix stripping for Form 4 primary documents.
+# ---------------------------------------------------------------------------
+
+
+def test_strip_xslt_prefix_removes_xsl_subdirectory() -> None:
+    """SEC submissions return ``xsl<style>/<doc>.xml`` for Form 4."""
+    from sec_edgar_mcp.tools.insider import _strip_xslt_prefix
+
+    assert _strip_xslt_prefix("xslF345X06/form4.xml") == "form4.xml"
+    assert _strip_xslt_prefix("xslF345X05/wf-form4_123.xml") == "wf-form4_123.xml"
+
+
+def test_strip_xslt_prefix_is_noop_for_raw_filename() -> None:
+    """Plain filenames must pass through untouched."""
+    from sec_edgar_mcp.tools.insider import _strip_xslt_prefix
+
+    assert _strip_xslt_prefix("form4.xml") == "form4.xml"
+    assert _strip_xslt_prefix("primary_doc.xml") == "primary_doc.xml"
+
+
+def test_strip_xslt_prefix_ignores_unrelated_subdirectories() -> None:
+    """A subdirectory that is *not* the SEC XSLT prefix must be preserved."""
+    from sec_edgar_mcp.tools.insider import _strip_xslt_prefix
+
+    assert _strip_xslt_prefix("foo/bar.xml") == "foo/bar.xml"
+    assert _strip_xslt_prefix("XSLF345X06/form4.xml") == "XSLF345X06/form4.xml"
+    # Empty rest after slash is treated as no-op (defensive).
+    assert _strip_xslt_prefix("xsl/") == "xsl/"

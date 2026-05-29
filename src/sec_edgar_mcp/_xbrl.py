@@ -182,6 +182,20 @@ def parse_form4(xml_bytes: bytes, *, accession_number: str = "") -> Form4Data:
             reason=(f"document exceeds maximum size of {MAX_INPUT_BYTES} bytes"),
         )
 
+    # Reject SEC's XSLT-rendered HTML view (``xsl<style>/<doc>.xml``)
+    # with a *structured* reason instead of a generic "mismatched tag"
+    # ParseError.  This is a real-corpus contract guard: the v0.2.0
+    # PB-3 incident (2026-05-25) showed every Form 4 returning
+    # "mismatched tag: line 29, column 16" because the caller was
+    # fetching the HTML rendering instead of the raw XML.  Surfacing
+    # the cause makes that misuse self-diagnosing without weakening
+    # ``defusedxml``'s secure parsing posture.
+    if _looks_like_html_rendering(xml_bytes):
+        raise Form4ParseError(
+            accession_number=accession_number,
+            reason="received SEC XSLT-rendered HTML, expected raw ownership XML",
+        )
+
     try:
         root = DET.fromstring(xml_bytes)
     except DefusedXmlException as exc:
@@ -396,6 +410,40 @@ def _localname(tag: Any) -> str:
     if "}" in tag:
         return tag.rsplit("}", 1)[1]
     return tag
+
+
+def _looks_like_html_rendering(xml_bytes: bytes) -> bool:
+    """Heuristic: detect SEC's XSLT-rendered HTML view of a Form 4.
+
+    SEC's submissions API returns ``xsl<style>/<doc>.xml`` as the
+    ``primaryDocument`` for Form 4; that path serves the *XSLT-rendered
+    HTML* view (with ``<!DOCTYPE html>`` + unclosed ``<br>`` / ``<meta>``
+    / ``<hr>`` tags) which is fundamentally not parseable as XML.  The
+    raw ownership XML lives at ``<doc>.xml`` (one directory up).
+
+    We sniff the leading 1024 bytes after the XML prolog for either an
+    HTML5 doctype or an opening ``<html>`` element.  We deliberately
+    look only at the head of the document so a large XSLT-rendered
+    payload is rejected before any defusedxml work happens.
+
+    Returns ``False`` for raw ``<ownershipDocument>`` bodies even if
+    their body text mentions ``html`` (e.g. inside a footnote).
+    """
+    if not xml_bytes:
+        return False
+    head = xml_bytes[:1024].lstrip()
+    # Skip optional XML prolog and BOM.
+    if head.startswith(b"\xef\xbb\xbf"):
+        head = head[3:].lstrip()
+    if head.startswith(b"<?xml"):
+        end = head.find(b"?>")
+        if end != -1:
+            head = head[end + 2 :].lstrip()
+    # Lowercase for case-insensitive doctype / tag detection.
+    head_lower = head.lower()
+    if head_lower.startswith(b"<!doctype html"):
+        return True
+    return head_lower.startswith(b"<html")
 
 
 def _find_child(parent: Any, name: str) -> Any:

@@ -452,3 +452,77 @@ def test_transaction_cap_is_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
     data = parse_form4(payload)
     assert data.transaction_count == 2
     assert any(w.startswith("transaction_cap_reached:") for w in data.raw_warnings)
+
+
+# ---------------------------------------------------------------------------
+# R8 hotfix — XSLT-rendered HTML is rejected with a structured reason
+# ---------------------------------------------------------------------------
+
+
+_XSLT_HTML_BODY = (
+    b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" '
+    b'"http://www.w3.org/TR/html4/loose.dtd">\n'
+    b"<html><head><title>SEC FORM 4</title></head>"
+    b"<body>SEC Form 4<br><table>...</table></body></html>"
+)
+
+
+def test_parse_xslt_rendered_html_is_rejected_with_structured_reason() -> None:
+    """The SEC ``xsl<style>/`` rendering is HTML, not XML.
+
+    Before R8 the parser surfaced a generic ``mismatched tag`` error
+    (line 29, column 16); after R8 we detect the leading HTML doctype
+    and raise a structured reason.
+    """
+    with pytest.raises(Form4ParseError) as excinfo:
+        parse_form4(_XSLT_HTML_BODY, accession_number="0000021344-26-000122")
+    assert "XSLT-rendered HTML" in str(excinfo.value)
+    assert excinfo.value.accession_number == "0000021344-26-000122"
+
+
+def test_parse_bare_html_root_is_rejected() -> None:
+    """``<html>`` root (no doctype, lower-case) must also be rejected."""
+    with pytest.raises(Form4ParseError) as excinfo:
+        parse_form4(b"<html><body>FORM 4</body></html>", accession_number="bare-html")
+    assert "XSLT-rendered HTML" in str(excinfo.value)
+
+
+def test_parse_html_with_uppercase_doctype_is_rejected() -> None:
+    """Doctype detection must be case-insensitive."""
+    with pytest.raises(Form4ParseError):
+        parse_form4(b"<!DOCTYPE HTML><html></html>", accession_number="upper-doctype")
+
+
+def test_parse_xml_with_bom_is_tolerated() -> None:
+    """A leading UTF-8 BOM on a valid ownership XML must still parse."""
+    body = (
+        b"\xef\xbb\xbf<?xml version='1.0'?>"
+        b"<ownershipDocument><documentType>4</documentType>"
+        b"<issuer/><reportingOwner/></ownershipDocument>"
+    )
+    data = parse_form4(body, accession_number="bom-test")
+    assert data.document_type == "4"
+
+
+def test_looks_like_html_rendering_returns_false_for_empty() -> None:
+    """Direct branch coverage for the empty-input path of the heuristic."""
+    from sec_edgar_mcp._xbrl import _looks_like_html_rendering
+
+    assert _looks_like_html_rendering(b"") is False
+    assert _looks_like_html_rendering(b"<?xml version='1.0'?><ownershipDocument/>") is False
+
+
+def test_looks_like_html_rendering_skips_xml_prolog() -> None:
+    """A document with an XML prolog and an HTML body is still detected."""
+    from sec_edgar_mcp._xbrl import _looks_like_html_rendering
+
+    payload = b"<?xml version='1.0'?>\n<!DOCTYPE html><html></html>"
+    assert _looks_like_html_rendering(payload) is True
+
+
+def test_looks_like_html_rendering_skips_truncated_xml_prolog() -> None:
+    """Branch where the prolog header is missing the ``?>`` terminator."""
+    from sec_edgar_mcp._xbrl import _looks_like_html_rendering
+
+    # No closing ?> — the heuristic must fall through and inspect raw head.
+    assert _looks_like_html_rendering(b"<?xml version='1.0'<ownershipDocument/>") is False
