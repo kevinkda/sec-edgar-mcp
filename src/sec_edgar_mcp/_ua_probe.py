@@ -89,8 +89,7 @@ class UaProbeResult:
 #: rendered page size.  HEAD on this URL is served quickly and never
 #: returns >0 bytes of body to us.
 PROBE_URL: Final[str] = (
-    "https://www.sec.gov/cgi-bin/browse-edgar"
-    "?action=getcompany&CIK=0000320193&type=4&dateb=&owner=include&count=1"
+    "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000320193&type=4&dateb=&owner=include&count=1"
 )
 
 DEFAULT_CACHE_TTL_SECONDS: Final[int] = 300  # 5 minutes

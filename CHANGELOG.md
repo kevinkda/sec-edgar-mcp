@@ -35,10 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   P, C, H, D) over 242 transactions and form the parser's
   contract-test corpus.
 - New `tests/test_xbrl_real_corpus.py` invariants:
-    * directory holds ≥ 50 samples;
-    * every entry parses without exception;
-    * aggregate parse rate ≥ 95 %;
-    * corpus exercises ≥ 5 distinct transaction codes.
+  - directory holds ≥ 50 samples;
+  - every entry parses without exception;
+  - aggregate parse rate ≥ 95 %;
+  - corpus exercises ≥ 5 distinct transaction codes.
 - `tests/test_xbrl_fuzz.py` upgraded with corpus-seeded
   `@example` decorators on the random-bytes hypothesis fuzzer plus a
   parametrised real-corpus seed test, so any refactor that drops
@@ -92,11 +92,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `health_check` now returns an `overall_status` field aggregating the
   probe result:
-    * `unhealthy` when `sec_ua_reachable.status == UNCONFIGURED`
+  - `unhealthy` when `sec_ua_reachable.status == UNCONFIGURED`
       (server cannot call SEC at all).
-    * `degraded` when `sec_ua_reachable.status == REJECTED_HTML_403`
+  - `degraded` when `sec_ua_reachable.status == REJECTED_HTML_403`
       (UA explicitly banned — user must fix `.env`).
-    * `ok` otherwise; transient `TIMEOUT` / `NETWORK_ERROR` results
+  - `ok` otherwise; transient `TIMEOUT` / `NETWORK_ERROR` results
       do **not** downgrade `overall_status` because they are not the
       server's fault.
   All pre-R7 fields are preserved unchanged for backward compatibility.
