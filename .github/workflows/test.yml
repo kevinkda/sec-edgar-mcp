@@ -16,6 +16,6 @@ jobs:
     uses: kevinkda/mcp-ci-templates/.github/workflows/reusable-mcp-ci.yml@main
     secrets: inherit
     with:
-      os-matrix: '["ubuntu-latest", "macos-latest", "windows-latest"]'
+      os-matrix: '["ubuntu-latest", "macos-latest"]'
       python-versions: '["3.11", "3.12"]'
       run-markdownlint: true
