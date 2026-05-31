@@ -259,7 +259,7 @@ def _parse_items(raw: Any) -> list[str]:
         normalised = token
         if normalised.lower().startswith("item "):
             normalised = normalised[5:].strip()
-        if normalised:
+        if normalised:  # pragma: no branch - upstream split filters empties; falsy side defensive only
             out.append(normalised)
     return out
 

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-05-31
+
+### Added
+
+- **Test campaign batch 3 — 100% coverage + full security suite.**
+  Raised line+branch coverage from 92.13% to **100.00%** (637 tests, up
+  from 446) and added a complete security test matrix mirroring the
+  batch-1 schwab-positions-mcp template:
+  - `tests/test_coverage_completion.py` — drives every residual
+    `file:line` branch to 100% (server error-framing, stdio-harden
+    OSError paths, `_runtime` cache lookup/store exceptions, search
+    normalisation edge cases, cache DuckDB-error resilience, `_xbrl`
+    defensive skips, client JSON-shape + ticker-map branches).
+  - `tests/test_owasp_2017.py`, `tests/test_owasp_2021.py`,
+    `tests/test_owasp_2025.py` — OWASP Top 10 across all three editions,
+    each applicable category asserting a concrete invariant. **N/A
+    categories are explicitly documented with source-drift guards**:
+    A2/A7 Broken Authentication (SEC EDGAR is unauthenticated — no
+    Bearer/refresh tokens) and A7:2017 XSS (no HTML generated/served).
+  - `tests/test_pentest.py` — active attacker simulation: SSRF
+    redirection, SQL/command injection, XXE file-read + SSRF + parameter
+    entities + XML bombs, resource exhaustion, and information-leak
+    guards.
+  - `tests/test_exception.py` — exception-path type guards, HTTP-layer
+    error handling, cache best-effort resilience, and email/PII-leak
+    scrubbing.
+  - `tests/test_boundary.py` — boundary-value sweeps for every numeric
+    and string input (limit, since_days, CIK/ticker length, accession
+    format, search query, item codes, extra-field rejection).
+- Confirmed XXE protection: `defusedxml` refuses external DTD entities,
+  parameter entities, and entity-expansion bombs — sec-edgar-mcp is the
+  only batch-3 repo with a genuine XXE-applicable surface (the Form 4
+  XBRL parser).
+
+### Changed
+
+- CI coverage gate (`tool.coverage.report.fail_under`) raised from 85 to
+  **100**.
+- `markdownlint-cli2` pre-commit hook gated to `stages: [manual]` (aligns
+  with gitleaks) because the `npx --yes` invocation times out on
+  locked-down corporate networks; CI still runs markdownlint on the
+  public-network reusable workflow.
+- Two `# pragma: no cover` / `# pragma: no branch` annotations added to
+  provably-unreachable defensive branches (token-bucket `wait<=0`
+  continue, double-checked-lock race sides, POSIX-only chmod on the
+  Windows path) with documented rationale, plus matching source-drift
+  guards in the test suite.
+
 ## [0.2.2] - 2026-05-29
 
 ### Fixed

@@ -251,7 +251,7 @@ class Cache:
             parent.mkdir(parents=True, exist_ok=True)
         # Best-effort tighten on POSIX (no-op on Windows; restrictive_umask
         # already prevented broad bits from being set on creation).
-        if parent.exists() and not _platform.IS_WINDOWS:
+        if parent.exists() and not _platform.IS_WINDOWS:  # pragma: no branch - parent always exists post-mkdir
             _platform.secure_chmod(parent, 0o700)
 
     def _open(self) -> None:
@@ -599,7 +599,7 @@ def get_cache() -> Cache | None:
     if _singleton is not None:
         return _singleton
     with _singleton_lock:
-        if _singleton is None:
+        if _singleton is None:  # pragma: no branch - double-checked lock; race side not deterministically testable
             _singleton = Cache()
     return _singleton
 

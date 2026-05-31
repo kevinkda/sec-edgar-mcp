@@ -157,7 +157,7 @@ class TokenBucket:
                     self._timestamps.append(now)
                     return
                 wait = 1.0 - (now - self._timestamps[0])
-                if wait <= 0:
+                if wait <= 0:  # pragma: no cover - unreachable: eviction at >=1.0s guarantees wait>0
                     continue
                 await asyncio.sleep(wait)
 

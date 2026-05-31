@@ -1,6 +1,6 @@
 [project]
 name = "sec-edgar-mcp"
-version = "0.2.2"
+version = "0.2.3"
 description = "Read-only MCP server for SEC EDGAR public API (filings, Form 4, full-text search)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -102,7 +102,7 @@ exclude_also = [
     "pragma: no cover",
     "@(abc\\.)?abstractmethod",
 ]
-fail_under = 85
+fail_under = 100
 show_missing = true
 skip_covered = false
 

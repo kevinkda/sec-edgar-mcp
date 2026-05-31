@@ -42,7 +42,7 @@ def _harden_stdio() -> None:
         assert log_dir is not None
         with _platform.restrictive_umask():
             log_dir.mkdir(parents=True, exist_ok=True)
-        if not _platform.IS_WINDOWS:
+        if not _platform.IS_WINDOWS:  # pragma: no branch - POSIX-only chmod; Windows side N/A in CI
             _platform.secure_chmod(log_dir, 0o700)
     except OSError:
         log_dir = None

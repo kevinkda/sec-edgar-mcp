@@ -25,7 +25,7 @@ async def get_client() -> SecEdgarClient:
     global _client
     if _client is None:
         async with _lock:
-            if _client is None:
+            if _client is None:  # pragma: no branch - double-checked lock; race side not deterministically testable
                 _client = make_client()
     return _client
 
