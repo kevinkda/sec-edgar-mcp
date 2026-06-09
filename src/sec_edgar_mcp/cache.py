@@ -58,8 +58,13 @@ def _truthy(raw: str | None, *, default: bool) -> bool:
 
 
 def cache_enabled() -> bool:
-    """Honor ``SEC_EDGAR_CACHE_ENABLED`` (default on)."""
-    return _truthy(os.environ.get(ENV_CACHE_ENABLED), default=True)
+    """Honor ``SEC_EDGAR_CACHE_ENABLED`` (default off — opt-in).
+
+    .. versionchanged:: 0.2.4
+        cache now opt-in, default disabled.  Set ``SEC_EDGAR_CACHE_ENABLED=true``
+        to re-enable the DuckDB read-through cache.
+    """
+    return _truthy(os.environ.get(ENV_CACHE_ENABLED), default=False)
 
 
 def cache_bypass() -> bool:

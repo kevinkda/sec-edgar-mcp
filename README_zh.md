@@ -16,7 +16,10 @@
 SEC EDGAR 提供公司行为和披露主干（10-K / 10-Q / 8-K / Form 4 内部人交易、
 S-1、委托书 …）。两个仓库共享同一套硬化纪律：
 
-- DuckDB 本地缓存（filings 24 小时；Form 4 6 小时；filing 全文 30 天）。
+- DuckDB 本地缓存（filings 24 小时；Form 4 6 小时；filing 全文 30 天）——
+  **默认关闭（需显式开启）**，不创建 DuckDB 文件、每次工具调用都实时打 EDGAR
+  （返回 `_cache_status: "disabled"`）；通过 `SEC_EDGAR_CACHE_ENABLED=true`
+  （也接受 `1` / `yes` / `on`）显式启用。
 - httpx 异步客户端 + 令牌桶限速（SEC 公平使用：≤10 req/s）。
 - Pydantic v2 入参校验（CIK / ticker / accession-number / 表单白名单）。
 - stdio 加固，日志永远不会污染 JSON-RPC 流。

@@ -31,14 +31,36 @@ def cache(tmp_path: Path) -> Cache:
 
 
 def test_cache_enabled_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v0.2.4 BREAKING: unset env var now defaults to disabled (was on)."""
     monkeypatch.delenv("SEC_EDGAR_CACHE_ENABLED", raising=False)
+    assert cache_enabled() is False
+
+
+@pytest.mark.parametrize(
+    "val",
+    ["1", "true", "yes", "on", "TRUE", "Yes", "On", " true ", "  1 ", "\tyes\n"],
+)
+def test_cache_enabled_truthy_matrix(monkeypatch: pytest.MonkeyPatch, val: str) -> None:
+    """v0.2.4: opt-in flag accepts 1/true/yes/on across case + surrounding whitespace."""
+    monkeypatch.setenv("SEC_EDGAR_CACHE_ENABLED", val)
     assert cache_enabled() is True
 
 
-@pytest.mark.parametrize("val,expected", [("1", True), ("yes", True), ("0", False), ("no", False)])
-def test_cache_enabled_truthy(monkeypatch: pytest.MonkeyPatch, val: str, expected: bool) -> None:
+@pytest.mark.parametrize("val", ["0", "false", "no", "off", "FALSE", "nope", "2", "", "   "])
+def test_cache_enabled_falsy_matrix(monkeypatch: pytest.MonkeyPatch, val: str) -> None:
+    """Anything outside the truthy set (incl. empty / whitespace-only) → disabled."""
     monkeypatch.setenv("SEC_EDGAR_CACHE_ENABLED", val)
-    assert cache_enabled() is expected
+    assert cache_enabled() is False
+
+
+def test_cache_enabled_unset_get_cache_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v0.2.4: unset → disabled → get_cache() returns None (no DuckDB file)."""
+    from sec_edgar_mcp.cache import get_cache, reset_cache_singleton
+
+    monkeypatch.delenv("SEC_EDGAR_CACHE_ENABLED", raising=False)
+    reset_cache_singleton()
+    assert cache_enabled() is False
+    assert get_cache() is None
 
 
 def test_cache_bypass_default(monkeypatch: pytest.MonkeyPatch) -> None:

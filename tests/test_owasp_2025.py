@@ -138,7 +138,8 @@ class TestReassertedInvariants:
 
         monkeypatch.delenv("SEC_EDGAR_CACHE_ENABLED", raising=False)
         monkeypatch.delenv("SEC_EDGAR_CACHE_BYPASS", raising=False)
-        assert cache_enabled() and not cache_bypass()
+        # v0.2.4: cache is opt-in (default disabled); bypass stays off.
+        assert not cache_enabled() and not cache_bypass()
 
     def test_a06_deps_declared(self) -> None:
         body = (REPO_ROOT / "pyproject.toml").read_text("utf-8")

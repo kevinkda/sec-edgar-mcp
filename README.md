@@ -26,7 +26,8 @@ backbone (10-K / 10-Q / 8-K / Form 4 insider trades, S-1, proxy materials,
 …). Both repos share the same hardening discipline:
 
 - DuckDB-backed local cache (24 h for filings index, 6 h for Form 4, 30 d
-  for filing text).
+  for filing text) — **disabled by default (opt-in)**; enable with
+  `SEC_EDGAR_CACHE_ENABLED=true`.
 - httpx async client with token-bucket rate limit (SEC fair-use: ≤10 req/s).
 - Pydantic v2 input validation (CIK / ticker / accession-number / form
   whitelist).
@@ -188,7 +189,11 @@ Never calls SEC.
 | `filing_text_cache` | 30 d | Filing bodies are immutable post-publication. |
 | `search_cache` | 24 h | Full-text search is expensive on SEC's side. |
 
-Override with `SEC_EDGAR_CACHE_BYPASS=1` for a single-call force-fresh.
+The cache is **disabled by default (opt-in)** — no DuckDB file is created and
+every tool hits EDGAR live, reporting `_cache_status: "disabled"`. Enable it
+explicitly with `SEC_EDGAR_CACHE_ENABLED=true` (also accepts `1` / `yes` /
+`on`). Once enabled, override with `SEC_EDGAR_CACHE_BYPASS=1` for a
+single-call force-fresh.
 
 ---
 

@@ -175,7 +175,7 @@ class TestA05Misconfiguration:
 
         monkeypatch.delenv("SEC_EDGAR_CACHE_ENABLED", raising=False)
         monkeypatch.delenv("SEC_EDGAR_CACHE_BYPASS", raising=False)
-        assert cache_enabled() is True
+        assert cache_enabled() is False
         assert cache_bypass() is False
 
 
