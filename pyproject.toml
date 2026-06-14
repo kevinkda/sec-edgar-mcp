@@ -36,7 +36,7 @@ dev = [
     "pytest-cov>=5.0,<8",
     "respx>=0.22.0,<0.24",
     "ruff>=0.6,<1",
-    "mypy>=1.10,<2",
+    "mypy>=2.1.0,<3",
     "bandit>=1.7,<2",
     # pip is a build-time tool (not a runtime import); pinned to >=26.1.2 to
     # clear PYSEC-2026-196 in the pip-audit CI gate. uv seeds pip into the
