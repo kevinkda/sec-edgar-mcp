@@ -102,8 +102,8 @@ async def test_existing_fields_preserved(monkeypatch: pytest.MonkeyPatch) -> Non
         "rate_limit_per_sec",
         "rate_limit_hard_cap",
         "cache_enabled",
-        "cache_size_mb",
-        "cache_hit_rate_24h",
+        "cache_backend",
+        "cache_entries",
         "platform_supported",
     ):
         assert key in out

@@ -4,7 +4,7 @@ Each business tool needs:
 
 1. A lazily-constructed :class:`SecEdgarClient` (so tests can override the
    transport via env) — created **once per server process**.
-2. Optional DuckDB cache lookup / store hooks.
+2. Optional pluggable-backend cache lookup / store hooks.
 """
 
 from __future__ import annotations

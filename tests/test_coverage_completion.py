@@ -26,11 +26,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import duckdb
 import pytest
 
 import sec_edgar_mcp.tools._runtime as runtime_mod
 from sec_edgar_mcp.cache import Cache
+from sec_edgar_mcp.cache_backend import MemoryBackend
 
 # ===========================================================================
 # server.py — error framing, stdio hardening, entry point
@@ -443,12 +443,12 @@ class TestMetaGaps:
         assert out == {"configured": True, "reason": None}
 
     def test_cache_summary_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """cache disabled → enabled False (line 45)."""
+        """cache disabled → enabled False."""
         from sec_edgar_mcp.tools import meta
 
         monkeypatch.setattr(meta, "cache_enabled", lambda: False)
         out = meta._safe_cache_summary()
-        assert out == {"enabled": False, "size_mb": 0.0, "hit_rate_24h": None}
+        assert out == {"enabled": False, "backend": None, "entries": 0}
 
     def test_cache_summary_get_cache_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """cache enabled but get_cache returns None (line 48)."""
@@ -460,15 +460,15 @@ class TestMetaGaps:
         assert out["enabled"] is False
 
     def test_cache_summary_stats_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """get_stats raising must degrade gracefully (lines 51-52)."""
+        """get_stats raising must degrade gracefully."""
         from sec_edgar_mcp.tools import meta
 
         broken = MagicMock()
-        broken.get_stats.side_effect = RuntimeError("duckdb gone")
+        broken.get_stats.side_effect = RuntimeError("backend gone")
         monkeypatch.setattr(meta, "cache_enabled", lambda: True)
         monkeypatch.setattr(meta, "get_cache", lambda: broken)
         out = meta._safe_cache_summary()
-        assert out == {"enabled": True, "size_mb": 0.0, "hit_rate_24h": None}
+        assert out == {"enabled": True, "backend": None, "entries": 0}
 
 
 # ===========================================================================
@@ -570,107 +570,57 @@ class TestClientGaps:
 
 
 class TestCacheGaps:
-    def test_get_json_row_duckdb_error_returns_none(self, tmp_path: Path) -> None:
-        """A DuckDB error during read returns None, not a crash (lines 330-336)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            real = cache._conn
-            fake = MagicMock(wraps=real)
-            fake.execute.side_effect = duckdb.Error("simulated read failure")
-            cache._conn = fake  # type: ignore[assignment]
-            assert cache._get_json_row("search_cache", "k") is None
-            cache._conn = real  # type: ignore[assignment]
-        finally:
-            cache.close()
+    def test_miss_returns_none(self) -> None:
+        """An unknown key is a clean miss."""
+        cache = Cache(backend=MemoryBackend())
+        assert cache.get_search({"q": "k"}) is None
+        assert cache.get_filings_index({"q": "k"}) is None
+        assert cache.get_form4({"q": "k"}) is None
+        assert cache.get_ticker_map() is None
 
-    def test_put_json_row_duckdb_error_swallowed(self, tmp_path: Path) -> None:
-        """A DuckDB error during write is logged + swallowed (lines 372-377)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            real = cache._conn
-            fake = MagicMock(wraps=real)
-            fake.execute.side_effect = duckdb.Error("simulated write failure")
-            cache._conn = fake  # type: ignore[assignment]
-            cache._put_json_row("search_cache", "k", {"x": 1}, 60)  # must not raise
-            cache._conn = real  # type: ignore[assignment]
-        finally:
-            cache.close()
+    def test_set_then_get_round_trip(self) -> None:
+        """A stored value is returned on the next get (response-cache core)."""
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "x"}, {"data": 1})
+        assert cache.get_search({"q": "x"}) == {"data": 1}
 
-    def test_expired_row_returns_none(self, tmp_path: Path) -> None:
-        """A row past its TTL is treated as a miss (lines 341-343 expired path)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            cache.put_search({"q": "x"}, {"data": 1})
-            assert cache._conn is not None
-            cache._conn.execute("UPDATE search_cache SET fetched_at = TIMESTAMP '2000-01-01 00:00:00', ttl_seconds = 1")
-            assert cache.get_search({"q": "x"}) is None
-        finally:
-            cache.close()
+    def test_expired_row_returns_none(self) -> None:
+        """A row past its TTL is treated as a miss."""
+        cache = Cache(backend=MemoryBackend())
+        # TTL 0 → immediately expired on the next read.
+        cache.backend.set("search_cache", "k", {"data": 1}, 0)
+        assert cache.backend.get("search_cache", "k") is None
 
-    def test_quarantine_when_db_missing_sets_conn_none(self, tmp_path: Path) -> None:
-        """_quarantine_and_reopen with a missing db file nulls the conn (lines 269-271)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            cache.close()
-            (tmp_path / "c.duckdb").unlink(missing_ok=True)
-            cache._quarantine_and_reopen(duckdb.Error("boom"))
-            assert cache._conn is None
-        finally:
-            cache.close()
+    def test_filing_text_round_trip(self) -> None:
+        """filing_text read/write round-trips through the backend."""
+        cache = Cache(backend=MemoryBackend())
+        cache.put_filing_text(
+            "0000320193-24-000123",
+            "primary",
+            content_type="text/html",
+            text="x",
+            byte_size=1,
+            truncated=False,
+        )
+        hit = cache.get_filing_text("0000320193-24-000123", "primary")
+        assert hit is not None
+        assert hit["text"] == "x"
 
-    def test_get_filing_text_duckdb_error(self, tmp_path: Path) -> None:
-        """filing_text read DuckDB error returns None (lines 451-456)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            real = cache._conn
-            fake = MagicMock(wraps=real)
-            fake.execute.side_effect = duckdb.Error("read fail")
-            cache._conn = fake  # type: ignore[assignment]
-            assert cache.get_filing_text("0000320193-24-000123", "primary") is None
-            cache._conn = real  # type: ignore[assignment]
-        finally:
-            cache.close()
+    def test_filing_text_miss(self) -> None:
+        """filing_text miss returns None."""
+        cache = Cache(backend=MemoryBackend())
+        assert cache.get_filing_text("0000000000-99-999999", "primary") is None
 
-    def test_put_filing_text_duckdb_error(self, tmp_path: Path) -> None:
-        """filing_text write DuckDB error is swallowed (lines 507-511)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            real = cache._conn
-            fake = MagicMock(wraps=real)
-            fake.execute.side_effect = duckdb.Error("write fail")
-            cache._conn = fake  # type: ignore[assignment]
-            cache.put_filing_text(
-                "0000320193-24-000123",
-                "primary",
-                content_type="text/html",
-                text="x",
-                byte_size=1,
-                truncated=False,
-            )
-            cache._conn = real  # type: ignore[assignment]
-        finally:
-            cache.close()
-
-    def test_get_stats_count_query_error(self, tmp_path: Path) -> None:
-        """get_stats tolerates a failed COUNT query (lines 532-533 / 547-548)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            real = cache._conn
-            assert real is not None
-            fake = MagicMock(wraps=real)
-
-            def selective(sql: str, *a: Any, **k: Any) -> Any:
-                if "COUNT(*)" in sql:
-                    raise duckdb.Error("count fail")
-                return real.execute(sql, *a, **k)
-
-            fake.execute.side_effect = selective
-            cache._conn = fake  # type: ignore[assignment]
-            stats = cache.get_stats()
-            assert all(v == 0 for v in stats.rows_per_table.values())
-            cache._conn = real  # type: ignore[assignment]
-        finally:
-            cache.close()
+    def test_get_stats_size_error_degrades(self) -> None:
+        """get_stats tolerates a backend size() failure (entries → 0)."""
+        backend = MemoryBackend()
+        fake = MagicMock(wraps=backend)
+        fake.size.side_effect = RuntimeError("size fail")
+        fake.name = "memory"
+        cache = Cache(backend=fake)
+        stats = cache.get_stats()
+        assert stats.entries == 0
+        assert stats.backend == "memory"
 
 
 # ===========================================================================
@@ -819,169 +769,35 @@ class TestClientCacheFilingsBranches:
         assert out["text"] == "cached body"
         assert out["_cache_status"] == "hit"
 
-    def test_cache_record_event_no_conn(self, tmp_path: Path) -> None:
-        """_record_event is a no-op when the connection is gone (line 310)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
+    def test_cache_reset_clears_rows(self) -> None:
+        """reset() clears all stored entries via the backend."""
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "x"}, {"data": 1})
+        cache.reset()
+        assert cache.get_search({"q": "x"}) is None
+
+    def test_cache_close_idempotent(self) -> None:
+        """close() is a no-op for the pluggable backend and is idempotent."""
+        cache = Cache(backend=MemoryBackend())
         cache.close()
-        cache._conn = None  # type: ignore[assignment]
-        cache._record_event("hit", "search_cache")  # must not raise
+        cache.close()  # must not raise
 
-    def test_cache_reset_clears_rows(self, tmp_path: Path) -> None:
-        """reset() truncates all tables (lines 576-583)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            cache.put_search({"q": "x"}, {"data": 1})
-            cache.reset()
-            assert cache.get_search({"q": "x"}) is None
-        finally:
-            cache.close()
+    def test_cache_context_manager(self) -> None:
+        """The facade supports context-manager use."""
+        with Cache(backend=MemoryBackend()) as cache:
+            cache.put_search({"q": "x"}, {"y": 1})
+            assert cache.get_search({"q": "x"}) == {"y": 1}
 
-    def test_cache_reset_no_conn(self, tmp_path: Path) -> None:
-        """reset() is a no-op when the connection is gone (line 578)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        cache.close()
-        cache._conn = None  # type: ignore[assignment]
-        cache.reset()  # must not raise
-
-    def test_cache_get_stats_size_mb(self, tmp_path: Path) -> None:
-        """get_stats reports a positive on-disk size for a populated DB (521-525)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            cache.put_search({"q": "x"}, {"data": 1})
-            stats = cache.get_stats()
-            assert stats.size_mb >= 0.0
-            assert stats.db_path.endswith("c.duckdb")
-        finally:
-            cache.close()
-
-    def test_parse_dt_branches(self) -> None:
-        """_parse_dt: None / naive datetime / tz datetime / bad str / good str (165-176)."""
-        from datetime import UTC, datetime
-
-        from sec_edgar_mcp.cache import _parse_dt
-
-        assert _parse_dt(None) is None
-        naive = datetime(2026, 1, 1, 12, 0, 0)
-        assert _parse_dt(naive) == naive  # naive returned as-is (line 170)
-        tz = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
-        assert _parse_dt(tz).tzinfo is None  # type: ignore[union-attr]
-        assert _parse_dt("not-a-date") is None
-        assert _parse_dt("2026-01-01T00:00:00Z") is not None
-        assert _parse_dt(12345) is None
-
-    def test_is_expired_with_string_fetched_at(self) -> None:
-        """_is_expired parses a string fetched_at then compares (line 186)."""
-        from sec_edgar_mcp.cache import _is_expired
-
-        # Far-past ISO string with a 1s TTL → expired.
-        assert _is_expired("2000-01-01T00:00:00Z", 1) is True
-        # Unparseable string → treated as expired.
-        assert _is_expired("garbage", 60) is True
-        # None inputs → expired.
-        assert _is_expired(None, 60) is True
-
-    def test_get_stats_conn_none(self, tmp_path: Path) -> None:
-        """get_stats with a closed connection returns zeroed stats (527->549)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        cache.close()
-        cache._conn = None  # type: ignore[assignment]
+    def test_cache_get_stats_entries(self) -> None:
+        """get_stats reports a positive entry count for a populated cache."""
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "x"}, {"data": 1})
         stats = cache.get_stats()
-        assert stats.rows_per_table == {}
-        assert stats.hits_24h == 0
-
-    def test_get_stats_size_mb_oserror(self, tmp_path: Path) -> None:
-        """A stat() failure on the DB file degrades size_mb to 0 (524-525)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            real_path = cache.db_path
-
-            class _FlakyPath:
-                """Proxy that exists() True but stat() raises, delegating the rest."""
-
-                def __init__(self, inner: Path) -> None:
-                    self._inner = inner
-
-                def exists(self) -> bool:
-                    return True
-
-                def stat(self) -> Any:
-                    raise OSError("stat failed")
-
-                def __getattr__(self, name: str) -> Any:
-                    return getattr(self._inner, name)
-
-                def __str__(self) -> str:
-                    return str(self._inner)
-
-                def __fspath__(self) -> str:
-                    return str(self._inner)
-
-            cache.db_path = _FlakyPath(real_path)  # type: ignore[assignment]
-            stats = cache.get_stats()
-            assert stats.size_mb == 0.0
-            cache.db_path = real_path
-        finally:
-            cache.close()
-
-    def test_reset_duckdb_error_swallowed(self, tmp_path: Path) -> None:
-        """reset() swallows a DuckDB delete error (lines 582-583)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            real = cache._conn
-            fake = MagicMock(wraps=real)
-            fake.execute.side_effect = duckdb.Error("delete fail")
-            cache._conn = fake  # type: ignore[assignment]
-            cache.reset()  # must not raise
-            cache._conn = real  # type: ignore[assignment]
-        finally:
-            cache.close()
-
-    def test_record_event_duckdb_error_swallowed(self, tmp_path: Path) -> None:
-        """_record_event swallows a DuckDB insert error (lines 316-317)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            real = cache._conn
-            fake = MagicMock(wraps=real)
-            fake.execute.side_effect = duckdb.Error("insert fail")
-            cache._conn = fake  # type: ignore[assignment]
-            cache._record_event("hit", "search_cache")  # must not raise
-            cache._conn = real  # type: ignore[assignment]
-        finally:
-            cache.close()
-
-    def test_quarantine_reopen_success(self, tmp_path: Path) -> None:
-        """Quarantine renames the corrupt DB aside and reopens fresh (281-289)."""
-        db = tmp_path / "c.duckdb"
-        cache = Cache(db_path=db)
-        try:
-            # The DB file exists; quarantine should rename + reopen successfully.
-            cache._quarantine_and_reopen(duckdb.Error("corrupt"))
-            # A fresh connection is open and a backup file was created.
-            assert cache._conn is not None
-            backups = list(tmp_path.glob("c.duckdb.corrupt-*"))
-            assert backups, "quarantine backup file should exist"
-        finally:
-            cache.close()
-
-    def test_quarantine_rename_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If the rename fails, the connection is nulled (lines 281-284)."""
-        import os
-
-        db = tmp_path / "c.duckdb"
-        cache = Cache(db_path=db)
-        try:
-
-            def boom_rename(*_a: Any, **_k: Any) -> None:
-                raise OSError("rename denied")
-
-            monkeypatch.setattr(os, "rename", boom_rename)
-            cache._quarantine_and_reopen(duckdb.Error("corrupt"))
-            assert cache._conn is None
-        finally:
-            cache.close()
+        assert stats.entries >= 1
+        assert stats.backend == "memory"
 
     def test_get_cache_singleton_reuse(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """get_cache returns the same singleton on repeat calls (line 602->604)."""
+        """get_cache returns the same singleton on repeat calls."""
         import sec_edgar_mcp.cache as cache_mod
 
         cache_mod.reset_cache_singleton()
@@ -990,33 +806,3 @@ class TestClientCacheFilingsBranches:
         c2 = cache_mod.get_cache()
         assert c1 is c2
         cache_mod.reset_cache_singleton()
-
-    def test_quarantine_reopen_failure_nulls_conn(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If the reopen connect fails after rename, the conn is nulled (290-292)."""
-        import sec_edgar_mcp.cache as cache_mod
-
-        db = tmp_path / "c.duckdb"
-        cache = Cache(db_path=db)
-        try:
-            # Rename succeeds; the subsequent reopen connect raises.
-            def boom_connect(*_a: Any, **_k: Any) -> Any:
-                raise duckdb.Error("reopen failed")
-
-            monkeypatch.setattr(cache_mod.duckdb, "connect", boom_connect)
-            cache._quarantine_and_reopen(duckdb.Error("corrupt"))
-            assert cache._conn is None
-            # Backup was created before the failed reopen.
-            assert list(tmp_path.glob("c.duckdb.corrupt-*"))
-        finally:
-            cache.close()
-
-    def test_get_stats_db_file_missing(self, tmp_path: Path) -> None:
-        """get_stats skips the size calc when the db file is absent (521->526)."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            # Remove the on-disk file while the in-memory connection lives on.
-            (tmp_path / "c.duckdb").unlink(missing_ok=True)
-            stats = cache.get_stats()
-            assert stats.size_mb == 0.0
-        finally:
-            cache.close()

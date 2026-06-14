@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-15
+
+### Changed
+
+- ⚠️ **BREAKING: the embedded DuckDB cache is removed in favour of a
+  pluggable cache backend (v0.7 T0).** The `duckdb` runtime dependency is
+  dropped entirely. The cache now delegates to a
+  `CacheBackend` selected via `SEC_EDGAR_CACHE_BACKEND`
+  (`memory` | `clickhouse`, default `memory`):
+  - **`memory` (default)** — an in-process LRU + per-entry-TTL response
+    cache built on stdlib `OrderedDict`. Concurrency-safe via a
+    short-held `threading.Lock` that never wraps I/O, so it does not
+    serialise the asyncio event loop the way the old single-connection
+    DuckDB + global `RLock` did. Zero external dependency, zero on-disk
+    files. Works out of the box.
+  - **`clickhouse` (opt-in)** — install the optional extra
+    `pip install sec-edgar-mcp[clickhouse]` and set
+    `SEC_EDGAR_CLICKHOUSE_URL` (+ `SEC_EDGAR_CACHE_BACKEND=clickhouse`)
+    to persist derived-analysis history with true concurrent read/write.
+  - **Graceful no-ClickHouse degradation** — derived-analysis history
+    requests (time-series) return
+    `{"status": "requires_clickhouse_persistence", "hint": ...}` instead
+    of raising when ClickHouse is not configured. **Core tools behave
+    identically with or without ClickHouse.**
+
+### Removed
+
+- `duckdb` runtime dependency (was `duckdb>=1.0,<2.0`).
+- DuckDB-specific cache internals: on-disk `cache.duckdb` file, the
+  `cache_events` audit table, file-quarantine/reopen logic, and the
+  on-disk `db_path` / `size_mb` / `hit_rate_24h` / `rows_per_table`
+  stats fields. `get_cache_stats` and `health_check` now report
+  `backend` + `entries` instead.
+
+### Added
+
+- `clickhouse` optional dependency group (`clickhouse-connect`).
+- `src/sec_edgar_mcp/cache_backend.py` — `CacheBackend` Protocol,
+  `MemoryBackend`, `ClickHouseBackend`, and the `get_cache_backend()`
+  factory.
+
+### Migration
+
+- No action needed for default users: the cache is opt-in and the new
+  default `memory` backend is zero-config.
+- If you previously relied on the persistent on-disk DuckDB cache, set
+  `SEC_EDGAR_CACHE_BACKEND=clickhouse` and provision ClickHouse via the
+  `[clickhouse]` extra. Any stale `cache.duckdb` file under
+  `$XDG_STATE_HOME/sec-edgar-mcp/` is now unused and can be deleted.
+
+100% line+branch coverage preserved (688 tests), with new memory /
+ClickHouse-mock / degradation paths; OWASP 2017/2021/2025 suites, the R7
+UA probe, and the R8 XBRL paths all preserved.
+
 ## [0.2.4] - 2026-06-10
 
 ### Changed

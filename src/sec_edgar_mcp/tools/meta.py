@@ -42,18 +42,18 @@ def _safe_user_agent_status() -> dict[str, Any]:
 
 def _safe_cache_summary() -> dict[str, Any]:
     if not cache_enabled():
-        return {"enabled": False, "size_mb": 0.0, "hit_rate_24h": None}
+        return {"enabled": False, "backend": None, "entries": 0}
     cache = get_cache()
     if cache is None:
-        return {"enabled": False, "size_mb": 0.0, "hit_rate_24h": None}
+        return {"enabled": False, "backend": None, "entries": 0}
     try:
         stats = cache.get_stats()
     except Exception:
-        return {"enabled": True, "size_mb": 0.0, "hit_rate_24h": None}
+        return {"enabled": True, "backend": None, "entries": 0}
     return {
         "enabled": stats.enabled,
-        "size_mb": round(stats.size_mb, 4),
-        "hit_rate_24h": stats.hit_rate_24h,
+        "backend": stats.backend,
+        "entries": stats.entries,
     }
 
 
@@ -95,8 +95,8 @@ async def health_check_impl() -> dict[str, Any]:
         "rate_limit_per_sec": resolve_rate_limit() if ua["configured"] else None,
         "rate_limit_hard_cap": SEC_HARD_RATE_LIMIT_PER_SEC,
         "cache_enabled": cache_summary["enabled"],
-        "cache_size_mb": cache_summary["size_mb"],
-        "cache_hit_rate_24h": cache_summary["hit_rate_24h"],
+        "cache_backend": cache_summary["backend"],
+        "cache_entries": cache_summary["entries"],
         "platform_supported": True,
         "sec_ua_reachable": probe.to_dict(),
         "overall_status": overall_status,
@@ -117,31 +117,21 @@ async def get_server_info_impl(*, server_version: str) -> dict[str, Any]:
 
 
 async def get_cache_stats_impl() -> dict[str, Any]:
-    """Local DuckDB cache health — never calls SEC."""
+    """Local cache backend health — never calls SEC."""
     cache = get_cache()
     if cache is None:
         return {
-            "db_path": None,
+            "backend": None,
             "enabled": False,
-            "size_mb": 0.0,
-            "rows_per_table": {},
-            "expired_rows": {},
-            "hit_rate_24h": None,
-            "hits_24h": 0,
-            "misses_24h": 0,
+            "entries": 0,
         }
     try:
         return cache.get_stats().to_dict()
     except Exception as exc:  # pragma: no cover
         return {
-            "db_path": str(cache.db_path),
+            "backend": cache.backend.name,
             "enabled": True,
-            "size_mb": 0.0,
-            "rows_per_table": {},
-            "expired_rows": {},
-            "hit_rate_24h": None,
-            "hits_24h": 0,
-            "misses_24h": 0,
+            "entries": 0,
             "error": type(exc).__name__,
         }
 

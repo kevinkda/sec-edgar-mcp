@@ -19,14 +19,12 @@ Applicability map (2021):
 
 from __future__ import annotations
 
-import os
-import stat
-import sys
 from pathlib import Path
 
 import pytest
 
 from sec_edgar_mcp.cache import Cache
+from sec_edgar_mcp.cache_backend import MemoryBackend
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src" / "sec_edgar_mcp"
@@ -73,15 +71,12 @@ class TestA01AccessControl:
 
 
 class TestA02CryptographicFailures:
-    def test_cache_file_owner_only_on_posix(self, tmp_path: Path) -> None:
-        if sys.platform == "win32":
-            pytest.skip("POSIX-only perm semantics")
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            mode = stat.S_IMODE(os.stat(tmp_path / "c.duckdb").st_mode)
-            assert mode == 0o600
-        finally:
-            cache.close()
+    def test_default_backend_persists_nothing_to_disk(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """v0.3.0: the default memory backend writes no cache file at all."""
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "x"}, {"v": 1})
+        assert list(tmp_path.rglob("*.duckdb")) == []
 
     def test_operator_email_never_logged_plaintext(self, caplog: pytest.LogCaptureFixture) -> None:
         """An email passed through an exception hint is redacted in logs."""
@@ -104,14 +99,11 @@ class TestA02CryptographicFailures:
 
 
 class TestA03Injection:
-    def test_duckdb_bound_params_block_sql_injection(self, tmp_path: Path) -> None:
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            payload = "'); DELETE FROM filings_index_cache;--"
-            cache.put_filings_index({"k": payload}, {"v": payload})
-            assert cache.get_filings_index({"k": payload}) == {"v": payload}
-        finally:
-            cache.close()
+    def test_cache_payload_not_interpreted(self) -> None:
+        cache = Cache(backend=MemoryBackend())
+        payload = "'); DELETE FROM filings_index_cache;--"
+        cache.put_filings_index({"k": payload}, {"v": payload})
+        assert cache.get_filings_index({"k": payload}) == {"v": payload}
 
     def test_form_types_constrained_to_allowlist(self) -> None:
         """Arbitrary form types are rejected by the allow-list validator."""
@@ -224,14 +216,11 @@ class TestA08DataIntegrity:
         with pytest.raises(SecTransientError):
             await client.get_json("https://data.sec.gov/scalar")
 
-    def test_cache_roundtrip_integrity(self, tmp_path: Path) -> None:
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            payload = {"company": {"name": "Apple Inc."}, "filings": [{"form": "10-K"}], "count": 1}
-            cache.put_filings_index({"k": "AAPL"}, payload)
-            assert cache.get_filings_index({"k": "AAPL"}) == payload
-        finally:
-            cache.close()
+    def test_cache_roundtrip_integrity(self) -> None:
+        cache = Cache(backend=MemoryBackend())
+        payload = {"company": {"name": "Apple Inc."}, "filings": [{"form": "10-K"}], "count": 1}
+        cache.put_filings_index({"k": "AAPL"}, payload)
+        assert cache.get_filings_index({"k": "AAPL"}) == payload
 
 
 # ===========================================================================
@@ -240,16 +229,13 @@ class TestA08DataIntegrity:
 
 
 class TestA09Logging:
-    def test_cache_audit_events_recorded(self, tmp_path: Path) -> None:
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            cache.put_search({"q": "x"}, {"v": 1})
-            cache.get_search({"q": "x"})
-            assert cache._conn is not None
-            count = cache._conn.execute("SELECT COUNT(*) FROM cache_events").fetchone()[0]
-            assert count >= 2
-        finally:
-            cache.close()
+    def test_cache_stats_monitoring_surface(self) -> None:
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "x"}, {"v": 1})
+        cache.get_search({"q": "x"})
+        stats = cache.get_stats().to_dict()
+        assert stats["entries"] >= 1
+        assert stats["backend"] == "memory"
 
 
 # ===========================================================================

@@ -23,14 +23,12 @@ Applicability map (2017):
 
 from __future__ import annotations
 
-import os
-import stat
-import sys
 from pathlib import Path
 
 import pytest
 
 from sec_edgar_mcp.cache import Cache
+from sec_edgar_mcp.cache_backend import MemoryBackend
 from sec_edgar_mcp.errors import redact_email
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -55,17 +53,14 @@ SSRF_PAYLOADS = [
 
 
 class TestA1Injection:
-    def test_duckdb_writes_use_bound_params(self, tmp_path: Path) -> None:
-        """A SQL payload stored via the cache is inert data, not executable DDL."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            payload = "x'); DROP TABLE search_cache;--"
-            cache.put_search({"q": payload}, {"injected": payload})
-            hit = cache.get_search({"q": payload})
-            # The table survived and the payload round-trips as inert data.
-            assert hit == {"injected": payload}
-        finally:
-            cache.close()
+    def test_cache_payload_is_inert_data(self) -> None:
+        """A SQL/injection payload stored via the cache round-trips as inert data."""
+        cache = Cache(backend=MemoryBackend())
+        payload = "x'); DROP TABLE search_cache;--"
+        cache.put_search({"q": payload}, {"injected": payload})
+        hit = cache.get_search({"q": payload})
+        # The payload round-trips verbatim and is never interpreted.
+        assert hit == {"injected": payload}
 
     def test_cik_regex_rejects_injection_chars(self) -> None:
         """CIK/ticker input forbids SQL/shell metacharacters before any use."""
@@ -239,18 +234,19 @@ class TestA5AccessControl:
 
 
 class TestA6Misconfiguration:
-    def test_cache_db_not_world_readable_on_posix(self, tmp_path: Path) -> None:
-        """The DuckDB cache file is 0o600 (owner-only) on POSIX."""
-        if sys.platform == "win32":
-            pytest.skip("POSIX-only perm semantics")
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            mode = stat.S_IMODE(os.stat(tmp_path / "c.duckdb").st_mode)
-            assert mode == 0o600
-            assert not (mode & stat.S_IRGRP)
-            assert not (mode & stat.S_IROTH)
-        finally:
-            cache.close()
+    def test_default_backend_writes_no_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The default memory backend persists nothing to disk (zero attack surface).
+
+        v0.3.0 removed the on-disk DuckDB cache; the default backend is an
+        in-process LRU, so there is no cache file to mis-permission at all.
+        """
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+        monkeypatch.delenv("SEC_EDGAR_CACHE_BACKEND", raising=False)
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "x"}, {"v": 1})
+        # No cache file of any kind is created on disk.
+        assert list(tmp_path.rglob("*.duckdb")) == []
+        assert list(tmp_path.rglob("cache*")) == []
 
     def test_user_agent_enforced(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Without a valid UA, the client refuses to issue requests (fail-closed)."""
@@ -300,14 +296,19 @@ class TestA8Deserialization:
         with pytest.raises(SecTransientError):
             await client.get_json("https://data.sec.gov/scalar")
 
-    def test_cache_deserialise_rejects_non_dict(self) -> None:
-        """The cache deserialiser returns None for non-dict JSON, never raises."""
-        from sec_edgar_mcp.cache import _deserialise
+    def test_clickhouse_backend_rejects_non_dict_payload(self) -> None:
+        """The ClickHouse backend returns None for non-dict JSON, never raises."""
+        from unittest.mock import MagicMock
 
-        assert _deserialise("[1,2,3]") is None
-        assert _deserialise("not json") is None
-        assert _deserialise(None) is None
-        assert _deserialise('{"ok": 1}') == {"ok": 1}
+        from sec_edgar_mcp.cache_backend import ClickHouseBackend
+
+        client = MagicMock()
+        client.command.return_value = None
+        result = MagicMock()
+        result.result_rows = [["[1, 2, 3]"]]  # valid JSON but not a dict
+        client.query.return_value = result
+        backend = ClickHouseBackend(url="clickhouse://x", client=client)
+        assert backend.get("t", "k") is None
 
 
 # ===========================================================================
@@ -329,20 +330,16 @@ class TestA9VulnerableComponents:
 
 
 class TestA10Logging:
-    def test_cache_events_audit_trail(self, tmp_path: Path) -> None:
-        """Cache hits/misses/writes are recorded in the cache_events table."""
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            cache.put_search({"q": "x"}, {"data": 1})
-            cache.get_search({"q": "x"})  # hit
-            cache.get_search({"q": "y"})  # miss
-            assert cache._conn is not None
-            kinds = {r[0] for r in cache._conn.execute("SELECT DISTINCT kind FROM cache_events").fetchall()}
-            assert "write" in kinds
-            assert "hit" in kinds
-            assert "miss" in kinds
-        finally:
-            cache.close()
+    def test_cache_stats_observability(self) -> None:
+        """The cache exposes a monitoring surface (backend + live entry count)."""
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "x"}, {"data": 1})
+        cache.get_search({"q": "x"})  # hit
+        cache.get_search({"q": "y"})  # miss
+        stats = cache.get_stats().to_dict()
+        assert stats["backend"] == "memory"
+        assert stats["entries"] >= 1
+        assert "enabled" in stats
 
     def test_server_log_format_is_structured_json(self) -> None:
         """The server log handler emits JSON-shaped records (monitoring-friendly)."""

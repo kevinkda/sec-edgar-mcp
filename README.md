@@ -25,9 +25,12 @@ prices and quotes, SEC EDGAR provides the corporate-action / disclosure
 backbone (10-K / 10-Q / 8-K / Form 4 insider trades, S-1, proxy materials,
 …). Both repos share the same hardening discipline:
 
-- DuckDB-backed local cache (24 h for filings index, 6 h for Form 4, 30 d
+- Pluggable response cache (24 h for filings index, 6 h for Form 4, 30 d
   for filing text) — **disabled by default (opt-in)**; enable with
-  `SEC_EDGAR_CACHE_ENABLED=true`.
+  `SEC_EDGAR_CACHE_ENABLED=true`. The default backend is an in-process
+  memory LRU (zero external dependency, concurrency-safe, non-blocking);
+  ClickHouse is an optional backend (`pip install sec-edgar-mcp[clickhouse]`)
+  for derived-analysis history.
 - httpx async client with token-bucket rate limit (SEC fair-use: ≤10 req/s).
 - Pydantic v2 input validation (CIK / ticker / accession-number / form
   whitelist).
@@ -180,7 +183,7 @@ Never calls SEC.
 
 ---
 
-## Cache TTLs
+## Cache backends & TTLs
 
 | Table | TTL | Rationale |
 | --- | --- | --- |
@@ -189,11 +192,25 @@ Never calls SEC.
 | `filing_text_cache` | 30 d | Filing bodies are immutable post-publication. |
 | `search_cache` | 24 h | Full-text search is expensive on SEC's side. |
 
-The cache is **disabled by default (opt-in)** — no DuckDB file is created and
-every tool hits EDGAR live, reporting `_cache_status: "disabled"`. Enable it
-explicitly with `SEC_EDGAR_CACHE_ENABLED=true` (also accepts `1` / `yes` /
-`on`). Once enabled, override with `SEC_EDGAR_CACHE_BYPASS=1` for a
-single-call force-fresh.
+The cache is **disabled by default (opt-in)** — enable it explicitly with
+`SEC_EDGAR_CACHE_ENABLED=true` (also accepts `1` / `yes` / `on`). Once
+enabled, override with `SEC_EDGAR_CACHE_BYPASS=1` for a single-call
+force-fresh.
+
+### Pluggable backends
+
+The cache delegates to a pluggable backend selected via
+`SEC_EDGAR_CACHE_BACKEND` (default `memory`):
+
+| Backend | Select with | Dependency | Use |
+| --- | --- | --- | --- |
+| `memory` (default) | unset / `SEC_EDGAR_CACHE_BACKEND=memory` | none (stdlib) | In-process LRU + TTL response cache. Concurrency-safe, non-blocking, zero files. Works out of the box. |
+| `clickhouse` | `SEC_EDGAR_CACHE_BACKEND=clickhouse` + `SEC_EDGAR_CLICKHOUSE_URL` | `pip install sec-edgar-mcp[clickhouse]` | Adds durable derived-analysis history (true concurrent read/write). |
+
+Without ClickHouse, derived-analysis history requests degrade gracefully —
+they return `{"status": "requires_clickhouse_persistence", "hint": ...}`
+instead of raising. **Core tools behave identically with or without
+ClickHouse.**
 
 ---
 

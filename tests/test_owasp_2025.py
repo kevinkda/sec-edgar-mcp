@@ -112,20 +112,15 @@ class TestReassertedInvariants:
         for t in await app().list_tools():
             assert not any(v in t.name for v in ("create", "delete", "update", "write"))
 
-    def test_a02_cache_perms(self, tmp_path: Path) -> None:
-        import os
-        import stat
-        import sys
-
+    def test_a02_no_cache_file_on_disk(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from sec_edgar_mcp.cache import Cache
+        from sec_edgar_mcp.cache_backend import MemoryBackend
 
-        if sys.platform == "win32":
-            pytest.skip("POSIX-only perm semantics")
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            assert stat.S_IMODE(os.stat(tmp_path / "c.duckdb").st_mode) == 0o600
-        finally:
-            cache.close()
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "x"}, {"v": 1})
+        # v0.3.0 default backend is in-process memory — no file to mis-permission.
+        assert list(tmp_path.rglob("*.duckdb")) == []
 
     def test_a04_rate_cap_clamped(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from sec_edgar_mcp.client import SEC_HARD_RATE_LIMIT_PER_SEC, resolve_rate_limit
@@ -154,17 +149,15 @@ class TestReassertedInvariants:
         with pytest.raises(SecTransientError):
             await client.get_json("https://data.sec.gov/s")
 
-    def test_a09_audit_events(self, tmp_path: Path) -> None:
+    def test_a09_cache_observability(self) -> None:
         from sec_edgar_mcp.cache import Cache
+        from sec_edgar_mcp.cache_backend import MemoryBackend
 
-        cache = Cache(db_path=tmp_path / "c.duckdb")
-        try:
-            cache.put_search({"q": "z"}, {"v": 1})
-            assert cache._conn is not None
-            n = cache._conn.execute("SELECT COUNT(*) FROM cache_events WHERE kind='write'").fetchone()[0]
-            assert n >= 1
-        finally:
-            cache.close()
+        cache = Cache(backend=MemoryBackend())
+        cache.put_search({"q": "z"}, {"v": 1})
+        stats = cache.get_stats().to_dict()
+        assert stats["entries"] >= 1
+        assert stats["backend"] == "memory"
 
     def test_a10_ssrf_cik_rejected(self) -> None:
         from sec_edgar_mcp.models import GetForm4InsiderTradesInput

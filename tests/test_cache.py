@@ -1,11 +1,9 @@
-"""Unit tests for sec_edgar_mcp.cache (DuckDB)."""
+"""Unit tests for sec_edgar_mcp.cache (pluggable-backend facade)."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+import time
 
-import duckdb
 import pytest
 
 from sec_edgar_mcp.cache import (
@@ -13,16 +11,15 @@ from sec_edgar_mcp.cache import (
     CacheStats,
     cache_bypass,
     cache_enabled,
-    default_db_path,
     get_cache,
     reset_cache_singleton,
-    state_root,
 )
+from sec_edgar_mcp.cache_backend import MemoryBackend
 
 
 @pytest.fixture
-def cache(tmp_path: Path) -> Cache:
-    return Cache(tmp_path / "cache.duckdb")
+def cache() -> Cache:
+    return Cache(backend=MemoryBackend())
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +28,7 @@ def cache(tmp_path: Path) -> Cache:
 
 
 def test_cache_enabled_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """v0.2.4 BREAKING: unset env var now defaults to disabled (was on)."""
+    """v0.2.4 BREAKING: unset env var defaults to disabled (opt-in)."""
     monkeypatch.delenv("SEC_EDGAR_CACHE_ENABLED", raising=False)
     assert cache_enabled() is False
 
@@ -41,7 +38,7 @@ def test_cache_enabled_default(monkeypatch: pytest.MonkeyPatch) -> None:
     ["1", "true", "yes", "on", "TRUE", "Yes", "On", " true ", "  1 ", "\tyes\n"],
 )
 def test_cache_enabled_truthy_matrix(monkeypatch: pytest.MonkeyPatch, val: str) -> None:
-    """v0.2.4: opt-in flag accepts 1/true/yes/on across case + surrounding whitespace."""
+    """opt-in flag accepts 1/true/yes/on across case + surrounding whitespace."""
     monkeypatch.setenv("SEC_EDGAR_CACHE_ENABLED", val)
     assert cache_enabled() is True
 
@@ -54,9 +51,7 @@ def test_cache_enabled_falsy_matrix(monkeypatch: pytest.MonkeyPatch, val: str) -
 
 
 def test_cache_enabled_unset_get_cache_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    """v0.2.4: unset → disabled → get_cache() returns None (no DuckDB file)."""
-    from sec_edgar_mcp.cache import get_cache, reset_cache_singleton
-
+    """unset → disabled → get_cache() returns None (no backend constructed)."""
     monkeypatch.delenv("SEC_EDGAR_CACHE_ENABLED", raising=False)
     reset_cache_singleton()
     assert cache_enabled() is False
@@ -66,18 +61,6 @@ def test_cache_enabled_unset_get_cache_none(monkeypatch: pytest.MonkeyPatch) -> 
 def test_cache_bypass_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SEC_EDGAR_CACHE_BYPASS", raising=False)
     assert cache_bypass() is False
-
-
-def test_default_db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    p = default_db_path()
-    assert "sec-edgar-mcp" in str(p)
-    assert p.name == "cache.duckdb"
-
-
-def test_state_root_xdg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    assert state_root() == tmp_path
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +78,11 @@ class TestFilingsIndex:
         assert out is not None
         assert out["company"]["cik"] == "0000000001"
 
+    def test_hit_with_cik_kwarg(self, cache: Cache) -> None:
+        """The retained ``cik`` kwarg is accepted (API compatibility)."""
+        cache.put_filings_index({"k": 1}, {"x": 1}, cik="0000000001")
+        assert cache.get_filings_index({"k": 1}) == {"x": 1}
+
     def test_different_params_miss(self, cache: Cache) -> None:
         cache.put_filings_index({"k": 1}, {"x": 1})
         assert cache.get_filings_index({"k": 2}) is None
@@ -106,8 +94,11 @@ class TestForm4:
 
     def test_hit(self, cache: Cache) -> None:
         cache.put_form4({"k": 1}, {"transactions": [], "issuer": {"cik": "1"}})
-        out = cache.get_form4({"k": 1})
-        assert out is not None
+        assert cache.get_form4({"k": 1}) is not None
+
+    def test_hit_with_cik_kwarg(self, cache: Cache) -> None:
+        cache.put_form4({"k": 1}, {"x": 1}, cik="1")
+        assert cache.get_form4({"k": 1}) == {"x": 1}
 
 
 class TestSearch:
@@ -139,48 +130,37 @@ class TestFilingText:
         assert hit is not None
         assert hit["text"] == "<html>hi</html>"
         assert hit["truncated"] is False
+        assert hit["content_type"] == "text/html"
+        assert hit["byte_size"] == 15
 
     def test_miss(self, cache: Cache) -> None:
         assert cache.get_filing_text("0000000000-99-999999", "primary") is None
 
 
 # ---------------------------------------------------------------------------
-# TTL expiry
+# TTL expiry (memory backend honors per-entry TTL)
 # ---------------------------------------------------------------------------
 
 
 class TestTTLExpiry:
-    def test_filings_index_expired(self, cache: Cache) -> None:
-        cache.put_filings_index({"k": 1}, {"x": 1})
-        assert cache._conn is not None
-        # Rewrite fetched_at to 25 hours ago.
-        old = (datetime.now(tz=UTC).replace(tzinfo=None)) - timedelta(hours=25)
-        cache._conn.execute(
-            "UPDATE filings_index_cache SET fetched_at = ?",
-            [old],
-        )
-        assert cache.get_filings_index({"k": 1}) is None
+    def test_zero_ttl_expires_immediately(self) -> None:
+        backend = MemoryBackend()
+        backend.set("filings_index_cache", "k", {"x": 1}, 0)
+        # monotonic clock has advanced past expiry of a 0-second TTL.
+        assert backend.get("filings_index_cache", "k") is None
 
-    def test_form4_expired(self, cache: Cache) -> None:
-        cache.put_form4({"k": 1}, {"x": 1})
-        assert cache._conn is not None
-        old = (datetime.now(tz=UTC).replace(tzinfo=None)) - timedelta(hours=7)
-        cache._conn.execute("UPDATE form4_cache SET fetched_at = ?", [old])
-        assert cache.get_form4({"k": 1}) is None
+    def test_short_ttl_expires(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        backend = MemoryBackend()
+        backend.set("search_cache", "k", {"x": 1}, 1)
+        # Fast-forward monotonic time past the TTL.
+        base = time.monotonic()
+        monkeypatch.setattr(time, "monotonic", lambda: base + 2.0)
+        assert backend.get("search_cache", "k") is None
 
-    def test_filing_text_expired(self, cache: Cache) -> None:
-        cache.put_filing_text(
-            "0000320193-24-000123",
-            "primary",
-            content_type="text/html",
-            text="x",
-            byte_size=1,
-            truncated=False,
-        )
-        assert cache._conn is not None
-        old = (datetime.now(tz=UTC).replace(tzinfo=None)) - timedelta(days=31)
-        cache._conn.execute("UPDATE filing_text_cache SET fetched_at = ?", [old])
-        assert cache.get_filing_text("0000320193-24-000123", "primary") is None
+    def test_unexpired_within_ttl(self) -> None:
+        backend = MemoryBackend()
+        backend.set("search_cache", "k", {"x": 1}, 3600)
+        assert backend.get("search_cache", "k") == {"x": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -192,36 +172,23 @@ class TestStats:
     def test_empty(self, cache: Cache) -> None:
         s = cache.get_stats()
         assert isinstance(s, CacheStats)
-        assert s.hits_24h == 0
-        assert s.misses_24h == 0
-        assert s.hit_rate_24h is None
+        assert s.entries == 0
+        assert s.backend == "memory"
 
-    def test_hit_recorded(self, cache: Cache) -> None:
+    def test_entries_counted(self, cache: Cache) -> None:
         cache.put_filings_index({"k": 1}, {"x": 1})
-        cache.get_filings_index({"k": 1})  # hit
-        cache.get_filings_index({"k": 99})  # miss
+        cache.put_search({"q": "y"}, {"z": 2})
         s = cache.get_stats()
-        assert s.hits_24h >= 1
-        assert s.misses_24h >= 1
-        assert s.hit_rate_24h is not None
+        assert s.entries == 2
 
     def test_to_dict_shape(self, cache: Cache) -> None:
         d = cache.get_stats().to_dict()
-        for key in (
-            "db_path",
-            "enabled",
-            "size_mb",
-            "rows_per_table",
-            "expired_rows",
-            "hit_rate_24h",
-            "hits_24h",
-            "misses_24h",
-        ):
+        for key in ("backend", "enabled", "entries"):
             assert key in d
 
 
 # ---------------------------------------------------------------------------
-# Reset / corruption isolation
+# Reset / lifecycle
 # ---------------------------------------------------------------------------
 
 
@@ -231,24 +198,13 @@ def test_reset_drops_rows(cache: Cache) -> None:
     assert cache.get_filings_index({"k": 1}) is None
 
 
-def test_corrupt_db_quarantined(tmp_path: Path) -> None:
-    db = tmp_path / "cache.duckdb"
-    db.write_bytes(b"this is not a valid duckdb file" * 1000)
-    cache = Cache(db)
-    # The corrupt file gets quarantined; the new DB is reopened.
-    assert any(p.name.startswith("cache.duckdb.corrupt-") for p in tmp_path.iterdir())
-    cache.put_filings_index({"k": 1}, {"x": 1})
-    assert cache.get_filings_index({"k": 1}) is not None
-    cache.close()
-
-
 def test_close_idempotent(cache: Cache) -> None:
     cache.close()
     cache.close()
 
 
-def test_context_manager(tmp_path: Path) -> None:
-    with Cache(tmp_path / "ctx.duckdb") as c:
+def test_context_manager() -> None:
+    with Cache(backend=MemoryBackend()) as c:
         c.put_search({"q": "x"}, {"y": 1})
         assert c.get_search({"q": "x"}) is not None
 
@@ -264,101 +220,36 @@ def test_singleton_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> Non
     assert get_cache() is None
 
 
-def test_singleton_enabled_returns_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+def test_singleton_enabled_returns_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SEC_EDGAR_CACHE_ENABLED", "1")
+    monkeypatch.delenv("SEC_EDGAR_CACHE_BACKEND", raising=False)
     reset_cache_singleton()
     a = get_cache()
     b = get_cache()
     assert a is b
+    assert a is not None
+    assert a.backend.name == "memory"
+    reset_cache_singleton()
+
+
+def test_default_facade_uses_memory_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A facade built with no explicit backend picks up the env-selected one."""
+    monkeypatch.delenv("SEC_EDGAR_CACHE_BACKEND", raising=False)
+    c = Cache()
+    assert c.backend.name == "memory"
 
 
 # ---------------------------------------------------------------------------
-# Error paths — DuckDB connection lost
+# Defensive isolation — cached values are copied, not shared
 # ---------------------------------------------------------------------------
 
 
-def test_get_when_connection_lost(cache: Cache) -> None:
-    # Force the connection closed; subsequent gets must return None
-    # without raising.
-    cache._conn = None
-    assert cache.get_filings_index({"k": 1}) is None
-    assert cache.get_form4({"k": 1}) is None
-    assert cache.get_search({"k": 1}) is None
-    assert cache.get_filing_text("0000000000-99-999999", "primary") is None
-    cache.put_filings_index({"k": 1}, {"x": 1})  # no-op
-    cache.put_filing_text("a", "primary", content_type="x", text="y", byte_size=1, truncated=False)
-
-
-def test_count_expired_unknown_table(cache: Cache) -> None:
-    # private API exercise — should never raise
-    assert cache._count_expired("not_a_table") == 0
-
-
-def test_db_open_error_does_not_propagate(tmp_path: Path) -> None:
-    """Open a path that already exists as a directory — DuckDB raises and
-    Cache should swallow into _conn = None."""
-    bad = tmp_path / "dirpath"
-    bad.mkdir()
-    c = Cache(bad)
-    # DuckDB should fail to open a directory; cache silently degrades.
-    # On some versions DuckDB may instead store inside the dir; either way
-    # the cache must not raise.
-    assert isinstance(c, Cache)
-
-
-def test_duckdb_imports() -> None:
-    # sanity: duckdb is importable; otherwise the rest of these tests are noise.
-    assert hasattr(duckdb, "connect")
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers — exercise tolerant parsing of fetched_at / raw_json
-# ---------------------------------------------------------------------------
-
-
-def test_parse_dt_accepts_iso_string() -> None:
-    from sec_edgar_mcp.cache import _parse_dt
-
-    out = _parse_dt("2024-05-01T12:34:56+00:00")
-    assert out is not None
-    assert out.year == 2024
-
-
-def test_parse_dt_handles_z_suffix_and_garbage() -> None:
-    from sec_edgar_mcp.cache import _parse_dt
-
-    assert _parse_dt("2024-05-01T12:34:56Z") is not None
-    assert _parse_dt("not-a-date") is None
-    assert _parse_dt(None) is None
-    assert _parse_dt(12345) is None
-
-
-def test_parse_dt_strips_tzinfo_for_aware_datetime() -> None:
-    from sec_edgar_mcp.cache import _parse_dt
-
-    dt = datetime(2024, 5, 1, 12, 34, tzinfo=UTC)
-    out = _parse_dt(dt)
-    assert out is not None
-    assert out.tzinfo is None
-
-
-def test_is_expired_handles_none_and_garbage() -> None:
-    from sec_edgar_mcp.cache import _is_expired
-
-    assert _is_expired(None, 60) is True
-    assert _is_expired(datetime.now(tz=UTC).replace(tzinfo=None), None) is True
-    assert _is_expired("garbage-iso", 60) is True
-
-
-def test_deserialise_handles_garbage() -> None:
-    from sec_edgar_mcp.cache import _deserialise
-
-    assert _deserialise(None) is None
-    assert _deserialise({"k": 1}) == {"k": 1}
-    assert _deserialise('{"k": 1}') == {"k": 1}
-    assert _deserialise("not-json") is None
-    assert _deserialise(b'{"k": 1}') == {"k": 1}
-    assert _deserialise(12345) is None
-    # Valid JSON but not a dict.
-    assert _deserialise("[1,2,3]") is None
+def test_cached_value_is_isolated(cache: Cache) -> None:
+    payload = {"results": [1, 2, 3]}
+    cache.put_search({"q": "x"}, payload)
+    payload["results"].append(4)  # mutate caller's copy after store
+    out = cache.get_search({"q": "x"})
+    assert out == {"results": [1, 2, 3]}
+    out["results"].append(99)  # mutate returned copy
+    again = cache.get_search({"q": "x"})
+    assert again == {"results": [1, 2, 3]}

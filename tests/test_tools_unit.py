@@ -626,8 +626,9 @@ async def test_get_server_info() -> None:
 @pytest.mark.asyncio
 async def test_get_cache_stats_enabled() -> None:
     out = await get_cache_stats_impl()
-    assert "rows_per_table" in out
-    assert "hit_rate_24h" in out
+    assert "backend" in out
+    assert "entries" in out
+    assert "enabled" in out
 
 
 @pytest.mark.asyncio
