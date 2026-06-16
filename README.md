@@ -7,8 +7,8 @@
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 Read-only **Model Context Protocol (MCP)** server that wraps the
-[SEC EDGAR](https://www.sec.gov/edgar.shtml) public API as **7 tools**
-(5 business + 2 meta) for use inside Cursor, Claude Code, and any
+[SEC EDGAR](https://www.sec.gov/edgar.shtml) public API as **10 tools**
+(8 business + 2 meta) for use inside Cursor, Claude Code, and any
 MCP-aware agent.
 
 > **Read-only** — every tool issues plain HTTPS GETs against
@@ -71,7 +71,7 @@ Register the server with Cursor / Claude Desktop — see
 
 ## Tooling surface
 
-The server exposes **6 tools**: 4 business + 2 meta.
+The server exposes **10 tools**: 8 business + 2 meta.
 
 ### `get_company_filings`
 
@@ -155,6 +155,71 @@ The server exposes **6 tools**: 4 business + 2 meta.
 
   ```python
   get_8k_with_items(cik_or_ticker="MSFT", item_codes=["5.02", "1.01"], since_days=180)
+  ```
+
+### `get_13f_holdings`
+
+- **When to use:** to read an **institutional investment manager's**
+  quarterly 13F-HR holdings — "what did Berkshire Hathaway hold last
+  quarter?". `cik_or_ticker` identifies the **filer** (the manager),
+  not a held company.
+- **Input:** `cik_or_ticker: str`, optional `quarter: str` (`YYYYQN`,
+  e.g. `"2024Q3"`). When omitted, the most-recent 13F-HR is used.
+- **Output:** `{ manager: {cik, name}, report_date, accession_number,
+  form, value_units: "thousands" | "dollars", holding_count,
+  total_value_reported, total_value_usd, total_shares,
+  holdings: [{ name_of_issuer, title_of_class, cusip, value,
+  shares_or_principal_amount, shares_or_principal_type, put_call,
+  investment_discretion, voting_authority_sole/shared/none }, ...],
+  warnings }`.
+- **Security:** the information-table XML is parsed with `defusedxml`
+  (external entities / billion-laughs refused). The SEC **2023Q3
+  value-unit cutover** (thousands → whole dollars) is handled — both the
+  raw reported value and a normalised whole-dollar total are returned.
+- **Example call:**
+
+  ```python
+  get_13f_holdings(cik_or_ticker="1067983", quarter="2024Q2")  # Berkshire Hathaway
+  ```
+
+### `get_institutional_holders`
+
+- **When to use:** the reverse of `get_13f_holdings` — "which 13F managers
+  report a position in $TICKER?". Aggregates recent 13F-HR full-text
+  search hits into distinct filers.
+- **Input:** `ticker: str`, `since_days: int = 120` (1 ≤ N ≤ 550),
+  `limit: int = 50` (1 ≤ N ≤ 200).
+- **Output:** `{ ticker, company, holder_count, holders: [{ cik, name,
+  filings, latest_filing_date, latest_accession }, ...],
+  search_total_hits, warnings }`.
+- **Note:** bounded by `since_days` — a manager whose latest 13F predates
+  the window will not appear. This is an approximation built on SEC's
+  full-text index, not a definitive holders register.
+- **Example call:**
+
+  ```python
+  get_institutional_holders(ticker="AAPL", since_days=120)
+  ```
+
+### `get_proxy_statement`
+
+- **When to use:** to extract key facts from an issuer's most-recent
+  **DEF 14A proxy statement** — meeting / record dates, the auditor,
+  shareholder proposals, and executive-compensation figures.
+- **Input:** `cik_or_ticker: str`.
+- **Output:** `{ company: {cik, name, ticker}, accession_number, form,
+  filing_date, document_url, proxy: { meeting_date, record_date,
+  fiscal_year, auditor, proposals: [{number, title}, ...],
+  proposal_count, max_total_compensation, compensation_figures,
+  warnings } }`.
+- **Security:** DEF 14A is HTML, so facts are extracted from a **bounded,
+  tag-stripped plain-text projection** — untrusted issuer HTML is never
+  fed to an XML parser, keeping the XXE attack surface closed. All
+  extracted fields are length-capped.
+- **Example call:**
+
+  ```python
+  get_proxy_statement(cik_or_ticker="AAPL")
   ```
 
 ### `health_check` (meta)

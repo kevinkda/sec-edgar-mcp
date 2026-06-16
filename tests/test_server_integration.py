@@ -54,6 +54,9 @@ async def test_app_exports_seven_tools() -> None:
         "get_filing_text",
         "search_filings_full_text",
         "get_8k_with_items",
+        "get_13f_holdings",
+        "get_institutional_holders",
+        "get_proxy_statement",
         "health_check",
         "get_server_info",
     }
@@ -89,7 +92,7 @@ async def test_call_get_server_info_through_app() -> None:
     result = await a.call_tool("get_server_info", {})
     payload = _extract_payload(result)
     assert payload["server_version"] == SERVER_VERSION
-    assert len(payload["supported_tools"]) == 7
+    assert len(payload["supported_tools"]) == 10
 
 
 def test_initialize_reports_release_tag_version() -> None:
@@ -170,6 +173,115 @@ async def test_call_get_8k_with_items_through_app(make_client) -> None:
     payload = _extract_payload(result)
     assert payload["count"] == 1
     assert payload["filings"][0]["items"] == ["5.02"]
+
+
+def _seed_13f_routes() -> list[FakeRoute]:
+    tickers = json.loads((FIXTURE_DIR / "company_tickers.json").read_text(encoding="utf-8"))
+    subs = json.loads((FIXTURE_DIR / "submissions_13f_manager.json").read_text(encoding="utf-8"))
+    index = json.loads((FIXTURE_DIR / "index_13f.json").read_text(encoding="utf-8"))
+    info_table = (FIXTURE_DIR / "form13f_info_table.xml").read_text(encoding="utf-8")
+    return [
+        FakeRoute("/files/company_tickers.json", json_body=tickers),
+        FakeRoute("/submissions/CIK", json_body=subs),
+        FakeRoute("-index.json", json_body=index),
+        FakeRoute("form13fInfoTable.xml", text_body=info_table, content_type="text/xml"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_call_get_13f_holdings_through_app(make_client) -> None:
+    client = make_client(_seed_13f_routes())
+    await runtime_mod.set_client_for_tests(client)
+    a = app()
+    result = await a.call_tool("get_13f_holdings", {"cik_or_ticker": "1067983"})
+    payload = _extract_payload(result)
+    assert payload["holding_count"] == 3
+    assert payload["manager"]["cik"] == "0001067983"
+
+
+@pytest.mark.asyncio
+async def test_call_get_institutional_holders_through_app(make_client) -> None:
+    tickers = json.loads((FIXTURE_DIR / "company_tickers.json").read_text(encoding="utf-8"))
+    subs = json.loads((FIXTURE_DIR / "submissions_aapl.json").read_text(encoding="utf-8"))
+    search = json.loads((FIXTURE_DIR / "search_13f_holders.json").read_text(encoding="utf-8"))
+    routes = [
+        FakeRoute("/files/company_tickers.json", json_body=tickers),
+        FakeRoute("/submissions/CIK", json_body=subs),
+        FakeRoute("/LATEST/search-index", json_body=search),
+    ]
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    a = app()
+    result = await a.call_tool("get_institutional_holders", {"ticker": "AAPL"})
+    payload = _extract_payload(result)
+    assert payload["holder_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_call_get_proxy_statement_through_app(make_client) -> None:
+    tickers = json.loads((FIXTURE_DIR / "company_tickers.json").read_text(encoding="utf-8"))
+    subs = json.loads((FIXTURE_DIR / "submissions_proxy.json").read_text(encoding="utf-8"))
+    body = (FIXTURE_DIR / "def14a_apple.htm").read_text(encoding="utf-8")
+    routes = [
+        FakeRoute("/files/company_tickers.json", json_body=tickers),
+        FakeRoute("/submissions/CIK", json_body=subs),
+        FakeRoute("def14a-2026.htm", text_body=body, content_type="text/html"),
+    ]
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    a = app()
+    result = await a.call_tool("get_proxy_statement", {"cik_or_ticker": "AAPL"})
+    payload = _extract_payload(result)
+    assert payload["proxy"]["meeting_date"] == "May 15, 2026"
+
+
+@pytest.mark.asyncio
+async def test_13f_not_found_framed(make_client) -> None:
+    """A 13F manager with no 13F filings surfaces a not_found error frame."""
+    tickers = json.loads((FIXTURE_DIR / "company_tickers.json").read_text(encoding="utf-8"))
+    routes = [
+        FakeRoute("/files/company_tickers.json", json_body=tickers),
+        FakeRoute("/submissions/CIK", json_body={"name": "X", "filings": {"recent": {}}}),
+    ]
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    a = app()
+    result = await a.call_tool("get_13f_holdings", {"cik_or_ticker": "AAPL"})
+    payload = _extract_payload(result)
+    assert payload.get("error") == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_proxy_not_found_framed(make_client) -> None:
+    tickers = json.loads((FIXTURE_DIR / "company_tickers.json").read_text(encoding="utf-8"))
+    routes = [
+        FakeRoute("/files/company_tickers.json", json_body=tickers),
+        FakeRoute("/submissions/CIK", json_body={"name": "X", "filings": {"recent": {}}}),
+    ]
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    a = app()
+    result = await a.call_tool("get_proxy_statement", {"cik_or_ticker": "AAPL"})
+    payload = _extract_payload(result)
+    assert payload.get("error") == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_institutional_holders_search_error_framed(make_client) -> None:
+    """A search transport failure surfaces as a SecError frame, not a crash."""
+    tickers = json.loads((FIXTURE_DIR / "company_tickers.json").read_text(encoding="utf-8"))
+    subs = json.loads((FIXTURE_DIR / "submissions_aapl.json").read_text(encoding="utf-8"))
+    routes = [
+        FakeRoute("/files/company_tickers.json", json_body=tickers),
+        FakeRoute("/submissions/CIK", json_body=subs),
+        FakeRoute("/LATEST/search-index", status_code=404),
+    ]
+    client = make_client(routes)
+    await runtime_mod.set_client_for_tests(client)
+    a = app()
+    result = await a.call_tool("get_institutional_holders", {"ticker": "AAPL"})
+    payload = _extract_payload(result)
+    assert payload.get("error") == "not_found"
 
 
 @pytest.mark.asyncio

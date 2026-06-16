@@ -57,7 +57,7 @@ class TestA03PromptInjection:
         from sec_edgar_mcp.server import app
 
         tools = await app().list_tools()
-        assert len(tools) == 7
+        assert len(tools) == 10
         for t in tools:
             desc = (t.description or "").lower()
             for marker in PROMPT_INJECTION_MARKERS:

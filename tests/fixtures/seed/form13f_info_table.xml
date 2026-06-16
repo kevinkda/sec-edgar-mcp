@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">
+    <infoTable>
+        <nameOfIssuer>APPLE INC</nameOfIssuer>
+        <titleOfClass>COM</titleOfClass>
+        <cusip>037833100</cusip>
+        <value>1500000</value>
+        <shrsOrPrnAmt>
+            <sshPrnamt>10000</sshPrnamt>
+            <sshPrnamtType>SH</sshPrnamtType>
+        </shrsOrPrnAmt>
+        <investmentDiscretion>SOLE</investmentDiscretion>
+        <votingAuthority>
+            <Sole>10000</Sole>
+            <Shared>0</Shared>
+            <None>0</None>
+        </votingAuthority>
+    </infoTable>
+    <infoTable>
+        <nameOfIssuer>MICROSOFT CORP</nameOfIssuer>
+        <titleOfClass>COM</titleOfClass>
+        <cusip>594918104</cusip>
+        <value>2250000</value>
+        <shrsOrPrnAmt>
+            <sshPrnamt>5000</sshPrnamt>
+            <sshPrnamtType>SH</sshPrnamtType>
+        </shrsOrPrnAmt>
+        <putCall>Call</putCall>
+        <investmentDiscretion>DFND</investmentDiscretion>
+        <otherManager>2</otherManager>
+        <votingAuthority>
+            <Sole>0</Sole>
+            <Shared>5000</Shared>
+            <None>0</None>
+        </votingAuthority>
+    </infoTable>
+    <infoTable>
+        <nameOfIssuer>US TREASURY NOTE</nameOfIssuer>
+        <titleOfClass>NOTE</titleOfClass>
+        <cusip>912828YK0</cusip>
+        <value>500000</value>
+        <shrsOrPrnAmt>
+            <sshPrnamt>500000</sshPrnamt>
+            <sshPrnamtType>PRN</sshPrnamtType>
+        </shrsOrPrnAmt>
+        <investmentDiscretion>SOLE</investmentDiscretion>
+        <votingAuthority>
+            <Sole>0</Sole>
+            <Shared>0</Shared>
+            <None>500000</None>
+        </votingAuthority>
+    </infoTable>
+</informationTable>

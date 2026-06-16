@@ -14,7 +14,7 @@ jobs:
     # V5-D: consume the shared reusable CI workflow (kevinkda/mcp-ci-templates).
     # secrets: inherit is required so the gitleaks step receives GITHUB_TOKEN.
     uses: kevinkda/mcp-ci-templates/.github/workflows/reusable-mcp-ci.yml@main
-    secrets: inherit
+    secrets: inherit  # pragma: allowlist secret
     with:
       os-matrix: '["ubuntu-latest", "macos-latest"]'
       python-versions: '["3.11", "3.12"]'

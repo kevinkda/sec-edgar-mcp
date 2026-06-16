@@ -200,7 +200,7 @@ class TestA4XXE:
 class TestA5AccessControl:
     @pytest.mark.asyncio
     async def test_only_read_tools_are_exposed(self) -> None:
-        """The 7 tools are all read/query verbs — no create/update/delete."""
+        """The 10 tools are all read/query verbs — no create/update/delete."""
         from sec_edgar_mcp.server import app
 
         tools = await app().list_tools()
@@ -211,6 +211,9 @@ class TestA5AccessControl:
             "get_filing_text",
             "search_filings_full_text",
             "get_8k_with_items",
+            "get_13f_holdings",
+            "get_institutional_holders",
+            "get_proxy_statement",
             "health_check",
             "get_server_info",
         }

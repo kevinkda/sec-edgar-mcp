@@ -1,0 +1,26 @@
+{
+  "cik": "0000320193",
+  "name": "Apple Inc.",
+  "tickers": ["AAPL"],
+  "exchanges": ["Nasdaq"],
+  "filings": {
+    "recent": {
+      "accessionNumber": [
+        "0000320193-26-000005",
+        "0000320193-26-000004",
+        "0000320193-25-000010"
+      ],
+      "form": ["DEFA14A", "DEF 14A", "DEF 14A"],
+      "filingDate": [
+        "2026-01-12",
+        "2026-01-10",
+        "2025-01-10"
+      ],
+      "primaryDocument": [
+        "defa14a-2026.htm",
+        "def14a-2026.htm",
+        "def14a-2025.htm"
+      ]
+    }
+  }
+}

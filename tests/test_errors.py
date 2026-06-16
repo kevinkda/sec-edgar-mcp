@@ -12,6 +12,7 @@ from sec_edgar_mcp.errors import (
     SecRateLimitError,
     SecTransientError,
     SecValidationError,
+    ThirteenFParseError,
     redact_email,
 )
 
@@ -145,3 +146,33 @@ class TestForm4ParseError:
     def test_reason_must_be_str(self) -> None:
         with pytest.raises(TypeError):
             Form4ParseError(accession_number="x", reason=123)  # type: ignore[arg-type]
+
+
+class TestThirteenFParseError:
+    def test_round_trip(self) -> None:
+        err = ThirteenFParseError(
+            accession_number="0001067983-24-000020",
+            reason="expected root <informationTable>, got <foo>",
+        )
+        assert err.accession_number == "0001067983-24-000020"
+        assert "informationTable" in str(err)
+        assert "0001067983-24-000020" in str(err)
+
+    def test_reason_redacts_email(self) -> None:
+        err = ThirteenFParseError(
+            accession_number="x",
+            reason="contact ops@example.com to debug",
+        )
+        assert "ops@example.com" not in str(err)
+        assert "REDACTED" in err.reason
+
+    def test_accession_number_must_be_str(self) -> None:
+        with pytest.raises(TypeError):
+            ThirteenFParseError(accession_number=123, reason="x")  # type: ignore[arg-type]
+
+    def test_reason_must_be_str(self) -> None:
+        with pytest.raises(TypeError):
+            ThirteenFParseError(accession_number="x", reason=123)  # type: ignore[arg-type]
+
+    def test_is_secerror_subclass(self) -> None:
+        assert issubclass(ThirteenFParseError, SecError)

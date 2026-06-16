@@ -3,7 +3,7 @@
 [English](./README.md) | [简体中文](./README_zh.md)
 
 只读 **Model Context Protocol (MCP)** 服务器，将
-[SEC EDGAR](https://www.sec.gov/edgar.shtml) 公开 API 包装为 **7 个工具**
+[SEC EDGAR](https://www.sec.gov/edgar.shtml) 公开 API 包装为 **10 个工具**
 （5 业务 + 2 meta），可在 Cursor、Claude Code 以及任意 MCP 客户端中使用。
 
 > **只读** —— 每个工具都只对 SEC 公开端点发起 HTTPS GET，不会回写。
@@ -62,7 +62,7 @@ uv run sec-edgar-mcp        # 在 stdio 上启动 MCP 服务器
 
 ## 工具清单
 
-服务器对外暴露 **7 个工具**：5 业务 + 2 meta。
+服务器对外暴露 **10 个工具**：8 业务 + 2 meta。
 
 | Tool | 何时用 | 入参 | 缓存 TTL |
 | --- | --- | --- | --- |
@@ -71,6 +71,9 @@ uv run sec-edgar-mcp        # 在 stdio 上启动 MCP 服务器
 | `get_filing_text` | 拉某 filing 的全文（HTML/TXT） | `accession_number`, `document_type=primary` | 30 d |
 | `search_filings_full_text` | EDGAR 全文搜索 | `query`, `form_types?`, `since_days=90` | 24 h |
 | `get_8k_with_items` | 按 SEC item 编码筛选 8-K（1.01 / 2.02 / 5.02 / 9.01 等） | `cik_or_ticker`, `item_codes?`, `since_days=30`, `limit=50` | 24 h |
+| `get_13f_holdings` | 拉某**机构管理人**的 13F-HR 季度持仓（defusedxml 解析 information table；处理 2023Q3 千元→整美元单位切换） | `cik_or_ticker`（填报人）, `quarter?`（`YYYYQN`） | 24 h |
+| `get_institutional_holders` | 反查哪些 13F 机构持有某股（聚合近期 13F-HR 全文搜索命中） | `ticker`, `since_days=120`, `limit=50` | 24 h |
+| `get_proxy_statement` | 抽取 DEF 14A 代理声明关键信息（股东大会/登记日、审计机构、股东提案、高管薪酬） | `cik_or_ticker` | 24 h |
 | `health_check` | 本地+服务端健康探针：本地配置 + `sec_ua_reachable`（HEAD 探测 SEC 是否真的接受当前 UA，5 min 缓存） | 无 | n/a |
 | `get_server_info` | 本地版本/工具列表（不调 SEC） | 无 | n/a |
 

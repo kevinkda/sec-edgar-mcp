@@ -1,0 +1,31 @@
+{
+  "cik": "0001067983",
+  "name": "BERKSHIRE HATHAWAY INC",
+  "tickers": ["BRK-B"],
+  "exchanges": ["NYSE"],
+  "filings": {
+    "recent": {
+      "accessionNumber": [
+        "0001067983-24-000020",
+        "0001067983-24-000010",
+        "0001067983-23-000040"
+      ],
+      "form": ["13F-HR", "13F-HR", "13F-HR"],
+      "filingDate": [
+        "2024-08-14",
+        "2024-05-15",
+        "2023-08-14"
+      ],
+      "reportDate": [
+        "2024-06-30",
+        "2024-03-31",
+        "2023-06-30"
+      ],
+      "primaryDocument": [
+        "primary_doc.xml",
+        "primary_doc.xml",
+        "primary_doc.xml"
+      ]
+    }
+  }
+}

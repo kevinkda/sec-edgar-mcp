@@ -161,6 +161,29 @@ class Form4ParseError(SecError):
         return f"Form4ParseError(accession_number={self.accession_number}): {self.reason}"
 
 
+class ThirteenFParseError(SecError):
+    """A 13F-HR information-table XML body could not be parsed.
+
+    Raised by :mod:`sec_edgar_mcp._thirteenf` when the document is not a
+    well-formed ``<informationTable>`` (unparseable XML, wrong root, or a
+    ``defusedxml`` refusal of an entity expansion).  Missing **fields**
+    inside a well-formed row are tolerated — they surface as ``None`` /
+    zero plus a ``raw_warnings`` entry — only structural failures raise.
+    """
+
+    def __init__(self, *, accession_number: str, reason: str) -> None:
+        if not isinstance(accession_number, str):
+            raise TypeError("accession_number must be str")
+        if not isinstance(reason, str):
+            raise TypeError("reason must be str")
+        self.accession_number: str = accession_number
+        self.reason: str = redact_email(reason)
+        super().__init__(f"13F parse failed for {accession_number}: {self.reason}")
+
+    def __str__(self) -> str:
+        return f"ThirteenFParseError(accession_number={self.accession_number}): {self.reason}"
+
+
 __all__ = [
     "Form4ParseError",
     "SecConfigurationError",
@@ -169,5 +192,6 @@ __all__ = [
     "SecRateLimitError",
     "SecTransientError",
     "SecValidationError",
+    "ThirteenFParseError",
     "redact_email",
 ]

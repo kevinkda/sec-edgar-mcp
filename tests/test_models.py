@@ -9,9 +9,12 @@ from sec_edgar_mcp.errors import SecValidationError
 from sec_edgar_mcp.models import (
     ALLOWED_FORM_TYPES,
     Get8KWithItemsInput,
+    Get13FHoldingsInput,
     GetCompanyFilingsInput,
     GetFilingTextInput,
     GetForm4InsiderTradesInput,
+    GetInstitutionalHoldersInput,
+    GetProxyStatementInput,
     SearchFilingsFullTextInput,
     supported_tool_names,
 )
@@ -219,3 +222,72 @@ def test_models_are_frozen() -> None:
     v = GetCompanyFilingsInput(cik_or_ticker="AAPL")
     with pytest.raises(ValidationError):
         v.limit = 5  # type: ignore[misc]
+
+
+class TestGet13FHoldingsInput:
+    def test_minimal_no_quarter(self) -> None:
+        v = Get13FHoldingsInput(cik_or_ticker="1067983")
+        assert v.cik_or_ticker == "1067983"
+        assert v.quarter is None
+
+    def test_ticker_uppercased(self) -> None:
+        assert Get13FHoldingsInput(cik_or_ticker="brk-b").cik_or_ticker == "BRK-B"
+
+    def test_quarter_valid(self) -> None:
+        assert Get13FHoldingsInput(cik_or_ticker="AAPL", quarter="2024q3").quarter == "2024Q3"
+
+    def test_quarter_invalid_rejected(self) -> None:
+        for bad in ("2024Q5", "20XXQ1", "24Q1", "2024-Q1"):
+            with pytest.raises(ValidationError):
+                Get13FHoldingsInput(cik_or_ticker="AAPL", quarter=bad)
+
+    def test_garbage_cik_rejected(self) -> None:
+        with pytest.raises(SecValidationError):
+            Get13FHoldingsInput(cik_or_ticker="http://evil")
+
+    def test_non_str_cik_passthrough_validation(self) -> None:
+        # A non-str value bypasses the .upper() branch and is rejected by
+        # the type constraint downstream.
+        with pytest.raises(ValidationError):
+            Get13FHoldingsInput(cik_or_ticker=123)  # type: ignore[arg-type]
+
+
+class TestGetInstitutionalHoldersInput:
+    def test_minimal(self) -> None:
+        v = GetInstitutionalHoldersInput(ticker="AAPL")
+        assert v.ticker == "AAPL"
+        assert v.since_days == 120
+        assert v.limit == 50
+
+    def test_ticker_uppercased(self) -> None:
+        assert GetInstitutionalHoldersInput(ticker="aapl").ticker == "AAPL"
+
+    def test_garbage_ticker_rejected(self) -> None:
+        with pytest.raises(SecValidationError):
+            GetInstitutionalHoldersInput(ticker="file:///etc")
+
+    def test_bounds(self) -> None:
+        with pytest.raises(ValidationError):
+            GetInstitutionalHoldersInput(ticker="AAPL", since_days=0)
+        with pytest.raises(ValidationError):
+            GetInstitutionalHoldersInput(ticker="AAPL", limit=0)
+
+    def test_non_str_ticker_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            GetInstitutionalHoldersInput(ticker=123)  # type: ignore[arg-type]
+
+
+class TestGetProxyStatementInput:
+    def test_minimal(self) -> None:
+        assert GetProxyStatementInput(cik_or_ticker="AAPL").cik_or_ticker == "AAPL"
+
+    def test_ticker_uppercased(self) -> None:
+        assert GetProxyStatementInput(cik_or_ticker="aapl").cik_or_ticker == "AAPL"
+
+    def test_garbage_rejected(self) -> None:
+        with pytest.raises(SecValidationError):
+            GetProxyStatementInput(cik_or_ticker="//evil.example")
+
+    def test_non_str_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            GetProxyStatementInput(cik_or_ticker=123)  # type: ignore[arg-type]

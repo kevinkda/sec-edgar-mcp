@@ -1,4 +1,4 @@
-"""FastMCP server entry point — 6 outward-facing tools.
+"""FastMCP server entry point — 10 outward-facing tools.
 
 The first thing this module does is harden stdio so no stray ``print`` /
 log line pollutes the JSON-RPC stream:
@@ -112,12 +112,15 @@ from .errors import (  # noqa: E402
 )
 from .models import (  # noqa: E402
     Get8KWithItemsInput,
+    Get13FHoldingsInput,
     GetCompanyFilingsInput,
     GetFilingTextInput,
     GetForm4InsiderTradesInput,
+    GetInstitutionalHoldersInput,
+    GetProxyStatementInput,
     SearchFilingsFullTextInput,
 )
-from .tools import filings, insider, meta, search  # noqa: E402
+from .tools import filings, insider, meta, proxy, search, thirteenf  # noqa: E402
 
 log = logging.getLogger("sec_edgar_mcp.server")
 
@@ -261,6 +264,64 @@ def _build_mcp() -> FastMCP:
                 limit=limit,
             )
             return await filings.get_8k_with_items_impl(args)
+        except SecError as exc:
+            return _frame_error(exc)
+
+    @mcp_app.tool()
+    async def get_13f_holdings(
+        cik_or_ticker: str,
+        quarter: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a 13F institutional manager's reported holdings.
+
+        ``cik_or_ticker`` identifies the 13F **filer** (the investment
+        manager, e.g. Berkshire Hathaway), not a held company.  ``quarter``
+        optionally pins a reporting period as ``YYYYQN`` (e.g. ``2024Q3``);
+        when omitted the most-recent 13F-HR is used.  Holdings are parsed
+        from the filing's information-table XML with defused XML (no XXE).
+        """
+        try:
+            args = Get13FHoldingsInput(
+                cik_or_ticker=cik_or_ticker,
+                quarter=quarter,
+            )
+            return await thirteenf.get_13f_holdings_impl(args)
+        except SecError as exc:
+            return _frame_error(exc)
+
+    @mcp_app.tool()
+    async def get_institutional_holders(
+        ticker: str,
+        since_days: int = 120,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Reverse-lookup which 13F managers report a position in *ticker*.
+
+        Full-text-searches recent 13F-HR filings for the held company and
+        aggregates the distinct filers.  Bounded by ``since_days`` — a
+        manager whose latest 13F predates the window will not appear.
+        """
+        try:
+            args = GetInstitutionalHoldersInput(
+                ticker=ticker,
+                since_days=since_days,
+                limit=limit,
+            )
+            return await thirteenf.get_institutional_holders_impl(args)
+        except SecError as exc:
+            return _frame_error(exc)
+
+    @mcp_app.tool()
+    async def get_proxy_statement(cik_or_ticker: str) -> dict[str, Any]:
+        """Extract key facts from the issuer's most-recent DEF 14A proxy.
+
+        Surfaces meeting / record dates, the auditor, shareholder
+        proposals, and executive-compensation figures from a bounded
+        plain-text projection of the proxy (no untrusted-HTML XML parsing).
+        """
+        try:
+            args = GetProxyStatementInput(cik_or_ticker=cik_or_ticker)
+            return await proxy.get_proxy_statement_impl(args)
         except SecError as exc:
             return _frame_error(exc)
 

@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-16
+
+### Added
+
+- **`get_13f_holdings(cik_or_ticker, quarter?)`** — institutional 13F-HR
+  holdings (v0.7 T2). Resolves the **manager's** CIK, picks the latest
+  (or named `YYYYQN`) 13F-HR filing, locates the information-table XML in
+  the filing index, and parses it with **defused XML** (same XXE-safe
+  posture as the R8 Form 4 parser). Returns per-position issuer / CUSIP /
+  value / share-or-principal amount / put-call / investment discretion /
+  voting authority, plus portfolio totals. Handles the SEC **2023Q3
+  value-unit cutover** (thousands → whole dollars) and surfaces both the
+  raw reported value and a normalised whole-dollar total.
+- **`get_institutional_holders(ticker, since_days?, limit?)`** — reverse
+  lookup of which 13F managers report a position in a given company.
+  Full-text-searches recent 13F-HR filings and aggregates distinct filers
+  (filing count, latest filing date / accession). Bounded by `since_days`.
+- **`get_proxy_statement(cik_or_ticker)`** — key DEF 14A (proxy statement)
+  facts: annual/special meeting date, record date, fiscal year, auditor,
+  shareholder proposals, and executive-compensation figures. Extracted
+  from a **bounded, tag-stripped plain-text projection** of the proxy
+  HTML — untrusted issuer HTML is never fed to an XML parser, so the XXE
+  attack surface is not widened.
+- New parser modules `_thirteenf.py` (defused 13F information table) and
+  `_proxy.py` (bounded DEF 14A extractor), plus the `ThirteenFParseError`
+  structured exception.
+- Full security coverage for the new surface: OWASP XXE (external entity /
+  parameter entity / billion-laughs all refused via `defusedxml`), SSRF
+  (CIK / ticker / quarter cannot smuggle a host into the outbound request),
+  injection (adversarial issuer text is inert, length-capped data), plus
+  pentest / boundary tests (oversized payloads, unicode-namespaced tags,
+  holding/proposal caps, numeric ceilings). Maintained at **100 %** line +
+  branch coverage.
+
+### Changed
+
+- The server now exposes **10 tools** (was 7): the three additions above
+  join the existing filings / Form 4 / full-text-search / 8-K / meta tools.
+  `get_server_info` reports the updated tool list.
+
 ## [0.3.0] - 2026-06-15
 
 ### Changed

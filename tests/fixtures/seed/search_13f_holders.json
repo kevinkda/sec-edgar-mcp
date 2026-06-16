@@ -1,0 +1,40 @@
+{
+  "hits": {
+    "total": { "value": 3 },
+    "hits": [
+      {
+        "_id": "0001067983-24-000020:form13fInfoTable.xml",
+        "_score": 9.1,
+        "_source": {
+          "adsh": "0001067983-24-000020",
+          "ciks": ["0001067983"],
+          "display_names": ["BERKSHIRE HATHAWAY INC (CIK 0001067983)"],
+          "form": "13F-HR",
+          "file_date": "2024-08-14"
+        }
+      },
+      {
+        "_id": "0001067983-24-000010:form13fInfoTable.xml",
+        "_score": 8.2,
+        "_source": {
+          "adsh": "0001067983-24-000010",
+          "ciks": ["0001067983"],
+          "display_names": ["BERKSHIRE HATHAWAY INC (CIK 0001067983)"],
+          "form": "13F-HR",
+          "file_date": "2024-05-15"
+        }
+      },
+      {
+        "_id": "0001364742-24-000300:infotable.xml",
+        "_score": 7.5,
+        "_source": {
+          "adsh": "0001364742-24-000300",
+          "ciks": ["0001364742"],
+          "display_names": ["BLACKROCK INC. (CIK 0001364742)"],
+          "form": "13F-HR",
+          "file_date": "2024-08-12"
+        }
+      }
+    ]
+  }
+}
